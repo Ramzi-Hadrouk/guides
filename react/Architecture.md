@@ -10,18 +10,7 @@ This architecture is designed for:
 * Feature isolation
 * Domain-driven frontend systems
 
-The goal is not just folder organization.
-
-The real goals are:
-
-* clear ownership
-* scalability
-* strict boundaries
-* low coupling
-* easier refactoring
-* safe deletion
-* team scalability
-* future microfrontend readiness
+The goal is not just folder organization. The real goals are **clear ownership**, **scalability**, **strict boundaries**, **low coupling**, **easier refactoring**, **safe deletion**, **team scalability**, **future microfrontend readiness**, and **localized UI ownership per module and feature**.
 
 ---
 
@@ -37,39 +26,52 @@ src/
 ├── core/
 │
 ├── api/
-│   ├── base/
-│   ├── generated/
-│   ├── contracts/
-│   ├── mappers/
-│   └── index.ts
+│   ├── base/
+│   ├── generated/
+│   ├── contracts/
+│   ├── mappers/
+│   └── index.ts
 │
 ├── layouts/
-│   ├── dashboard-layout/
-│   ├── auth-layout/
-│   ├── public-layout/
-│   └── index.ts
+│   ├── dashboard-layout/
+│   │   ├── i18n/
+│   │   ├── components/
+│   │   ├── sections/
+│   │   ├── application/
+│   │   ├── state/
+│   │   ├── hooks/
+│   │   ├── utils/
+│   │   ├── validation/
+│   │   ├── types/
+│   │   ├── constants/
+│   │   ├── tests/
+│   │   ├── domain/
+│   │   └── index.ts  
+│   ├── auth-layout/
+│   ├── public-layout/
+│   └── index.ts
 │
 ├── shared/
-│   ├── ui/
-│   ├── hooks/
-│   ├── utils/
-│   ├── lib/
-│   ├── constants/
-│   ├── types/
-│   ├── icons/
-│   └── assets/
+│   ├── ui/
+│   ├── hooks/
+│   ├── utils/
+│   ├── lib/
+│   ├── constants/
+│   ├── types/
+│   ├── icons/
+│   ├── assets/
+│   └── i18n/ # Global config and utils of i18n
 │
 ├── modules/
-│
 │   ├── module-1/
-│   │
+│   │   ├── i18n/
 │   │   ├── pages/
-│   │   │
 │   │   ├── domain/
-│   │   │
 │   │   ├── shared/
 │   │   │
 │   │   ├── feature-1/
+│   │   │   ├── domain/ # Feature-bound domain logic
+│   │   │   ├── i18n/
 │   │   │   ├── components/
 │   │   │   ├── sections/
 │   │   │   ├── application/
@@ -83,10 +85,12 @@ src/
 │   │   │   └── index.ts
 │   │   │
 │   │   ├── feature-2/
+│   │   └── ...
 │   │   │
 │   │   └── index.ts
 │   │
 │   ├── module-2/
+│   │   └── ...
 │   │
 │   └── module-3/
 │
@@ -97,784 +101,107 @@ src/
 ├── styles/
 │
 └── main.tsx
+
 ```
 
 ---
 
 # Layer Responsibilities
 
----
+## Root & Infrastructure Layers
 
-# 1. app/
-
-Application composition layer.
-
-Contains:
-
-```txt
-App.tsx
-Providers
-Theme
-Router mounting
-Error boundaries
-Global application setup
-```
-
-## Allowed
-
-* providers
-* app composition
-* app initialization
-* theme setup
-* router integration
-
-## Forbidden
-
-* business logic
-* feature workflows
-* domain rules
-* feature state
+| Folder / Layer | Description & Responsibilities | Allowed / Contains | Forbidden |
+| --- | --- | --- | --- |
+| app/ | Application composition layer. Handles global setup and entry wrappers. | Providers, App composition, Initialization, Theme setup, Router integration, Error boundaries. | Business logic, Feature workflows, Domain rules, Feature state. |
+| bootstrap/ | Application startup logic executed before rendering the app. | Environment setup, Feature flags initialization, Startup configuration, Service initialization, Polyfills. | UI components, Application layouts, React hooks. |
+| core/ | Infrastructure layer providing the system's technical, business-agnostic foundation. | HTTP clients, Auth infrastructure, Permissions engine, Logging, Monitoring, Analytics, Storage abstractions. | UI presentation code, Business-specific models, Feature execution. |
+| api/base/ | Low-level network/API infrastructure. | Axios instances, Fetch wrappers, Interceptors, Retry strategies, Refresh token logic, Error normalization. | Business rules, Feature-specific logic. |
+| api/generated/ | Auto-generated backend definitions. **Must remain immutable.** | Swagger/OpenAPI generated types, Generated API clients, Raw DTOs. | Manual modifications, Custom business logic mapping. |
+| api/contracts/ | Frontend-facing API abstractions protecting the UI from breaking DTO modifications. | Frontend API contracts, Normalized response models, Request abstractions, Contract wrappers. | UI-specific logic, React hooks. |
+| api/mappers/ | Transformation layer converting structures between client and server worlds. | mapUserDtoToUser(), mapAppointmentResponse(), DTO $\leftrightarrow$ Domain Model converters. | React primitives, Global state interactions. |
+| layouts/ | Application shell layer mapping core layout layouts. | Dashboard layouts, Auth layouts, Public layouts, Navigation shells, Page containers. | Business workflows, API calls, Thick state management. |
 
 ---
 
-# 2. bootstrap/
+## Global & Domain Shared Layers
 
-Application startup logic.
-
-Contains:
-
-```txt
-environment setup
-feature flags
-startup configuration
-service initialization
-polyfills
-```
+| Folder / Layer | Description & Responsibilities | Allowed / Contains | Forbidden |
+| --- | --- | --- | --- |
+| shared/ | Purely technical global reusable items completely stripped of business awareness. | Generic components (shared/ui/Button), useDebounce, pure utilities (date, currency), global configuration (i18n/). | Domain-aware items (useDoctorData, UserProfileCard), business constraints. |
+| modules/ | Business domain layer. Each subfolder represents a fully isolated bounded context. | Independent folders for domain topics (e.g., billing, appointments, notifications). | Cross-module direct file dependencies without going through public APIs. |
+| module/i18n/ | Module-level localization files shared across multiple feature modules. | Shared page titles, Shared labels, Notification templates, Module-wide validation strings. | Feature-exclusive strings, Domain-agnostic generic strings. |
+| module/pages/ | High-level page layout configurations and feature composition. | Layout compositions (). | Directly handling API calls, Complicated data orchestration. |
+| module/domain/ | Pure, framework-independent business core logic. | Entities, Core business rules, Domain services, Pure transformations (calculateInvoice). | React components, Redux logic, API requests, Browser API dependencies. |
+| module/shared/ | Reusable utilities constrained strictly within this specific business module. | Shared UI components, Hooks, and Constants unique to this module's features. | Infrastructure wrappers, Globally generic components. |
 
 ---
 
-# 3. core/
-
-Infrastructure layer.
-
-This is the technical foundation of the application.
-
-Contains:
-
-```txt
-http clients
-authentication infrastructure
-permissions engine
-logging
-monitoring
-analytics
-error handling
-configuration
-storage abstraction
-```
-
-## Example
-
-```txt
-core/
-  http/
-  auth/
-  permissions/
-  monitoring/
-  logging/
-  config/
-```
-
-## Forbidden
-
-* UI
-* business-specific logic
-* feature logic
-
----
-
-# 4. api/
-
-Backend communication layer.
-
-This layer is separated from business modules intentionally.
-
----
-
-# api/base/
-
-Low-level API infrastructure.
-
-Contains:
-
-```txt
-axios instances
-fetch wrappers
-interceptors
-retry strategies
-refresh token logic
-timeout handling
-request cancellation
-base query configuration
-error normalization
-```
-
-## Forbidden
-
-* business rules
-* feature-specific logic
-
----
-
-# api/generated/
-
-Auto-generated backend contracts.
-
-Contains:
-
-```txt
-swagger generated types
-openapi generated clients
-DTOs
-generated API contracts
-```
-
-## Critical Rule
-
-This folder is:
-
-* immutable
-* auto-generated only
-
-Never manually edit generated files.
-
----
-
-# api/contracts/
-
-Frontend-facing API abstractions.
-
-Purpose:
-
-Prevent direct dependency on backend DTOs.
-
-Contains:
-
-```txt
-frontend api contracts
-normalized response models
-request abstractions
-contract wrappers
-```
-
----
-
-# api/mappers/
-
-Transformation layer.
-
-Converts:
-
-```txt
-DTO -> Domain Model
-Domain Model -> Request DTO
-```
-
-## Example
-
-```ts
-mapUserDtoToUser()
-mapAppointmentResponse()
-mapCreateRequest()
-```
-
-This prevents backend implementation details from leaking into the UI.
-
----
-
-# 5. layouts/
-
-Application shell layer.
-
-Contains:
-
-```txt
-dashboard layouts
-auth layouts
-public layouts
-navigation shells
-page containers
-```
-
-## Responsibilities
-
-* structure
-* navigation
-* layout composition
-* rendering shells
-
-## Forbidden
-
-* business workflows
-* API calls
-* heavy state management
-
----
-
-# 6. shared/
-
-Global reusable resources.
-
-This is one of the most dangerous layers in large projects.
-
-Strict discipline is required.
-
----
-
-# Allowed
-
-```txt
-shared/
-  ui/
-  hooks/
-  utils/
-  lib/
-  constants/
-  types/
-  icons/
-  assets/
-```
-
----
-
-# Correct Examples
-
-```txt
-shared/ui/Button
-shared/hooks/useDebounce
-shared/utils/date
-shared/lib/currency
-```
-
----
-
-# Forbidden
-
-Anything business-aware.
-
----
-
-# Wrong Examples
-
-```txt
-shared/hooks/useDoctorData
-shared/utils/clinicAvailability
-shared/components/UserProfileCard
-```
-
-These belong inside modules.
-
----
-
-# Golden Rule
-
-If the code understands business domains:
-
-> it does NOT belong in shared.
-
----
-
-# 7. modules/
-
-Business domain layer.
-
-Each module represents a bounded context.
-
-Examples:
-
-```txt
-users
-clinics
-billing
-appointments
-notifications
-```
-
-Each module should remain as isolated as possible.
-
----
-
-# module/pages/
-
-Page composition only.
-
-## Allowed
-
-```tsx
-<PageLayout>
-  <FeatureSection />
-</PageLayout>
-```
-
-## Forbidden
-
-* API calls
-* business workflows
-* complex orchestration
-
----
-
-# module/domain/
-
-Pure business logic layer.
-
-Contains:
-
-```txt
-entities
-business rules
-domain services
-pure transformations
-business validations
-```
-
-## Example
-
-```ts
-canBookAppointment()
-isDoctorAvailable()
-calculateInvoice()
-```
-
-## Must Be
-
-* pure
-* framework independent
-* testable
-
-## Forbidden
-
-* React
-* Redux
-* API calls
-* browser APIs
-
----
-
-# module/shared/
-
-Reusable resources inside the module only.
-
-Shared across features of the same module.
-
-Contains:
-
-```txt
-shared components
-shared hooks
-shared utilities
-shared constants
-```
-
----
-
-# feature-x/
-
-Represents a use case or capability.
-
-Not an entity.
-
-Examples:
-
-```txt
-create-item
-manage-items
-bulk-update
-analytics-dashboard
-```
-
----
-
-# feature/components/
-
-Small UI pieces.
-
-## Must Be
-
-* reusable inside the feature
-* mostly presentation-focused
-
-## Forbidden
-
-* orchestration logic
-* API communication
-
----
-
-# feature/sections/
-
-Large UI compositions.
-
-Examples:
-
-```txt
-FormSection
-TableSection
-OverviewSection
-```
-
-Responsibilities:
-
-* UI composition
-* feature assembly
-* lightweight orchestration
-
----
-
-# feature/application/
-
-Feature workflows and orchestration.
-
-This is one of the most important layers.
-
-Contains:
-
-```txt
-business workflows
-submit flows
-modal orchestration
-permission flows
-optimistic updates
-feature coordination
-```
-
-This layer may:
-
-* communicate with APIs
-* coordinate state
-* orchestrate business actions
-
-## Forbidden
-
-* primitive UI rendering
-
----
-
-# feature/state/
-
-Feature state management.
-
-Contains:
-
-```txt
-redux slices
-zustand stores
-selectors
-actions
-derived state
-```
-
-## Critical Rule
-
-Do NOT duplicate RTK Query server state inside Redux.
-
----
-
-# feature/hooks/
-
-Feature-specific hooks.
-
-Examples:
-
-```txt
-useFeaturePermissions
-useFeatureActions
-useFeatureFilters
-```
-
-## Forbidden
-
-Globally reusable hooks.
-
-Those belong in:
-
-```txt
-shared/hooks
-```
-
----
-
-# feature/utils/
-
-Pure utilities only.
-
-## Must Be
-
-* stateless
-* deterministic
-* side-effect free
-
----
-
-# feature/validation/
-
-Validation schemas.
-
-Examples:
-
-```txt
-zod
-yup
-form validation
-request validation
-```
-
----
-
-# feature/types/
-
-Feature-local types only.
-
-## Rule
-
-If the type is reused outside the feature:
-
-> move it to module level.
-
----
-
-# feature/constants/
-
-Feature-specific constants.
-
----
-
-# feature/tests/
-
-Feature tests.
-
-Contains:
-
-```txt
-unit tests
-integration tests
-feature tests
-```
-
----
-
-# feature/index.ts
-
-Public API of the feature.
-
-External layers should import only from here.
+## Feature-Level Layers (modules/*-module/feature-x/*)
+
+| Folder / Layer | Description & Responsibilities | Allowed / Contains | Forbidden |
+| --- | --- | --- | --- |
+| feature/domain/ | Feature-local domain and business rules required strictly to satisfy this isolated use case. | Feature specific rules, validations, and domain-scoped calculations. | React context, Hook hooks, Global actions. |
+| feature/i18n/ | Micro-localization files exclusive to this particular use case. | Feature-specific button titles, Alert messages, Inline helper micro-copy. | Shared global/module strings. |
+| feature/components/ | Granular UI building blocks isolated inside the local feature space. | Small presentational structures, Form inputs, Simple layout parts. | Network logic, Global state synchronization. |
+| feature/sections/ | Large UI structures orchestrating presentational elements. | FormSection, TableSection, Layout assembly components. | Complex domain logic, Root framework integrations. |
+| feature/application/ | Workflow coordinator and business orchestration engine. | Business workflows, Form submit orchestration, Modal toggles, Optimistic state updates. | Low-level HTML structure/Primitive rendering. |
+| feature/state/ | Feature-specific client-side data state managers. | Redux slices, Zustand stores, Selectors, Local derived metrics. | Duplicating server state cache from RTK Query. |
+| feature/hooks/ | Hooks scoping behaviors down to this single unique application scope. | useFeaturePermissions, useFeatureFilters, useFeatureActions. | Globally generic utility functions. |
+| feature/utils/ | Functional stateless helpers serving local components. | Deterministic, side-effect-free data manipulation helpers. | Managing state configurations, Browser mutations. |
+| feature/validation/ | Contract constraints evaluating runtime accuracy before processing actions. | Zod configurations, Yup schemas, Form checking workflows. | Shared cross-domain schemas. |
+| feature/types/ | Data definitions defining shapes internal to this layout piece. | Component props types, Local state payload structures. | Sharing out of feature boundaries without elevating definition up to module scope. |
+| feature/constants/ | Hardcoded parameters defining behavioral elements inside this component. | Action configurations, Static lists, Grid layout configurations. | Global system parameters. |
+| feature/tests/ | Continuous verification suite ensuring this unit runs correctly. | Unit tests, Component integration workflows, Performance tracking files. | Cross-module logic testing configurations. |
+| feature/index.ts | Public API boundary exposing designated functional capabilities outward. | Explicit item exports defining what other local folders can consume. | Exposing deep implementation details (export * from './everything'). |
 
 ---
 
 # Architectural Rules
 
----
+* **Rule 1 (No Reverse Imports):** Cross-feature direct imports are strictly forbidden. feature-1 must never import directly from feature-2.
+* **Rule 2 (Feature Isolation):** Features should remain fully autonomous. Share code between features only by bubbling it up to module/shared/, the module/domain/ layer, or orchestration patterns.
+* **Rule 3 (Strict Downward Flow):** shared/ must remain completely business-agnostic and never import from modules/ or core/.
+* **Rule 4 (Domain Purity):** The domain/ layer must stay 100% pure: no React components, no hooks, no state managers, and no direct API calls.
+* **Rule 5 (Thin View Layers):** Pages and components must keep business logic out of their views. JSX files should focus strictly on presentational mapping.
+* **Rule 6 (Pragmatic State Management):** Choose state placement deliberately based on data lifecycle rules:
 
-# Rule 1
+| State Type | Recommended Tool |
+| --- | --- |
+| **Local UI state** | useState / useReducer |
+| **Server cache** | RTK Query |
+| **Global app state** | Redux Toolkit |
+| **Complex feature state** | Zustand / Redux |
 
-No reverse imports.
+* **Rule 7 (Server State Source of Truth):** RTK Query manages server caching. Never manually sync or duplicate raw server responses into global Redux slices.
+* **Rule 8 (Controlled Public Surfaces):** Avoid blind barrel exports (export * from './everything'). Explicitly list public APIs to avoid circular dependencies and ensure clean tree-shaking.
+* **Rule 9 (Safe Deletability):** If dropping a feature directory breaks an unrelated area of the app, your domain boundaries are bleeding.
+* **Rule 10 (Encapsulate Declarative Checks):** Do not write loose boolean conditions inside UI elements (e.g., user.role === 'ADMIN' && clinic.status === 'ACTIVE'). Wrap conditions in descriptive helper functions like canManageClinic(user, clinic).
+* **Rule 11 (Presentation-First UI):** UI components should remain dumb and predictable. They accept parameters via props, emit events through callbacks, and delegate logic upward.
+* **Rule 12 (Module Gateways):** Every domain module must maintain an explicit gateway file via modules/[domain-module]/index.ts. External layers must always go through this public contract.
+* **Rule 13 (No Architectural Dumping Grounds):** Folder names like misc/, helpers/, common/, or other/ are strictly banned.
+* **Rule 14 (DTO Sandbox Boundary):** Backend API contracts must never leak straight into UI elements. Always route inputs through mappers and local frontend contracts first.
+* **Rule 15 (Lightweight Layout Frameworks):** Layout structures function purely as application layout wrappers, never as processing yards for data operations.
+* **Rule 16 (Business-Blind Infrastructure):** Core configuration frameworks like core/ or api/base/ must never contain any code that understands your specific business domain.
+* **Rule 17 (Distributed Localization):** Keep copy files adjacent to the logic that uses them:
+* feature/i18n/ handles strings unique to that exact use case.
+* module/i18n/ manages copy shared across a domain context.
+* shared/i18n/ handles truly generic UI words (e.g., "Save", "Cancel").
 
-Bad:
 
-```txt
-feature-1 -> feature-2
-feature-2 -> feature-1
-```
-
----
-
-# Rule 2
-
-Features should not directly depend on each other internally.
-
-Use:
-
-* module shared
-* domain layer
-* orchestration
-* events
-
----
-
-# Rule 3
-
-shared must never depend on modules.
-
-Never.
 
 ---
 
-# Rule 4
-
-Domain layer must remain pure.
-
----
-
-# Rule 5
-
-Pages must not contain business logic.
-
----
-
-# Rule 6
-
-Do not put everything in Redux.
-
-Use the correct tool for the correct state type.
-
-| State Type            | Recommended Tool |
-| --------------------- | ---------------- |
-| Local UI state        | useState         |
-| Server cache          | RTK Query        |
-| Global app state      | Redux            |
-| Complex feature state | Zustand / Redux  |
-
----
-
-# Rule 7
-
-RTK Query is the source of truth for server state.
-
-Do not duplicate server data inside Redux.
-
----
-
-# Rule 8
-
-Avoid uncontrolled barrel exports.
-
-Bad:
-
-```ts
-export * from './everything'
-```
-
-This causes:
-
-* circular dependencies
-* hidden imports
-* poor tree shaking
-
----
-
-# Rule 9
-
-Every feature should be deletable safely.
-
-If removing one feature breaks half the system:
-
-> architecture boundaries are failing.
-
----
-
-# Rule 10
-
-Do not place business logic inside JSX.
-
-Bad:
-
-```tsx
-user.role === 'ADMIN' && clinic.status === 'ACTIVE'
-```
-
-Better:
-
-```ts
-canManageClinic(user, clinic)
-```
-
----
-
-# Rule 11
-
-Components should not become overly intelligent.
-
-Good components:
-
-* receive props
-* render UI
-* remain mostly presentation-focused
-
----
-
-# Rule 12
-
-Every module must expose a public API.
-
-Example:
-
-```txt
-modules/module-1/index.ts
-```
-
-External layers should never import internal files directly.
-
----
-
-# Rule 13
-
-Avoid "shared dumping".
-
-Forbidden folders:
-
-```txt
-misc/
-helpers/
-common/
-other/
-```
-
-These become architectural garbage bins.
-
----
-
-# Rule 14
-
-Generated Swagger/OpenAPI types must never leak directly into UI components.
-
-Use:
-
-* contracts
-* mappers
-* domain models
-
----
-
-# Rule 15
-
-Layouts are application shells, not business containers.
-
-Keep layouts lightweight.
-
----
-
-# Rule 16
-
-Infrastructure layers must remain business-agnostic.
-
-`core/` and `api/base/` should not understand business domains.
-
----
-
-# Final Result
-
-This architecture provides:
-
-| Area                    | Result    |
-| ----------------------- | --------- |
-| Scalability             | High      |
-| Maintainability         | High      |
-| Team Collaboration      | Excellent |
-| Domain Isolation        | Strong    |
-| Refactoring Safety      | High      |
-| Feature Ownership       | Clear     |
-| Testing                 | Easier    |
-| Cognitive Load          | Lower     |
-| Long-Term Stability     | Strong    |
-| Microfrontend Readiness | Excellent |
-
+# Final Architectural Performance Metrics
+
+| Area | Result | Target Metric Met |
+| --- | --- | --- |
+| **Scalability** | High | Unlocked parallel workflows for multi-team execution. |
+| **Maintainability** | High | Code changes stay contained inside localized directories. |
+| **Team Collaboration** | Excellent | Minimized codebase conflicts via clear feature boundaries. |
+| **Domain Isolation** | Strong | Core business rules are protected from UI framework churn. |
+| **Refactoring Safety** | High | Isolated scopes make code deletion safe and reliable. |
+| **Feature Ownership** | Clear | Modules track perfectly to business domains and engineering teams. |
+| **Testing** | Easier | Pure business layers accept straightforward unit testing. |
+| **Cognitive Load** | Lower | Developers only need to reason about a single feature directory at a time. |
+| **Microfrontend Readiness** | Excellent | Features are prepared for future decomposition into standalone micro-apps. |
+| **Localization Ownership** | Clear | Translation updates stay coupled with their respective features. |
