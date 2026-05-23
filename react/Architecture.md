@@ -1,4 +1,3 @@
-
 # Frontend Architecture (Scalable Enterprise Version)
 
 This architecture is designed for:
@@ -21,12 +20,14 @@ This architecture is also not limited to routes. The same grouping concept can b
 # Project Structure
 
 ```txt
+.env
+.env.example
 src/
 │
 ├── app/
-│   ├── (dashboard)/
-│   ├── (public)/
-│   ├── (auth)/
+│   ├── (group-1)/
+│   ├── (group-2)/
+│   ├── (group-3)/
 │   └── ...
 │
 ├── bootstrap/
@@ -41,7 +42,7 @@ src/
 │   └── index.ts
 │
 ├── layouts/
-│   ├── (dashboard)/
+│   ├── (group-1)/
 │   │   ├── dashboard-layout/
 │   │   │   ├── i18n/
 │   │   │   ├── components/
@@ -58,10 +59,10 @@ src/
 │   │   │   └── index.ts
 │   │   └── ...
 │   │
-│   ├── (auth)/
+│   ├── (group-3)/
 │   │   └── auth-layout/
 │   │
-│   ├── (public)/
+│   ├── (group-2)/
 │   │   └── public-layout/
 │   │
 │   └── index.ts
@@ -78,7 +79,7 @@ src/
 │   └── i18n/ # Global config and utils of i18n
 │
 ├── modules/
-│   ├── (dashboard)/
+│   ├── (group-1)/
 │   │   ├── module-1/
 │   │   │   ├── i18n/
 │   │   │   ├── pages/
@@ -109,10 +110,10 @@ src/
 │   │   │   └── ...
 │   │   └── module-3/
 │   │
-│   ├── (public)/
+│   ├── (group-2)/
 │   │   └── ...
 │   │
-│   └── (auth)/
+│   └── (group-3)/
 │       └── ...
 │
 ├── routes/
@@ -122,7 +123,11 @@ src/
 ├── styles/
 │
 └── main.tsx
-````
+```
+
+> **Environment Files**
+>
+> `.env` holds the actual configuration values. `.env.example` must be kept in sync with `.env` whenever keys are added or updated, but only example (non-sensitive) values should be committed.
 
 ---
 
@@ -280,6 +285,3 @@ The parentheses indicate that the folder is a **group folder**, not a business e
 | **Cognitive Load**          | Lower     | Developers only need to reason about a single feature directory at a time. |
 | **Microfrontend Readiness** | Excellent | Features are prepared for future decomposition into standalone micro-apps. |
 | **Localization Ownership**  | Clear     | Translation updates stay coupled with their respective features.           |
-
-
- 
