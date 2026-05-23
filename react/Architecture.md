@@ -24,11 +24,7 @@ This architecture is also not limited to routes. The same grouping concept can b
 .env.example
 src/
 │
-├── app/
-│   ├── (group-1)/
-│   ├── (group-2)/
-│   ├── (group-3)/
-│   └── ...
+├── app/ # routes(pages) in case  using nextjs
 │
 ├── bootstrap/
 │
@@ -156,23 +152,11 @@ They are used to **group related code without affecting the URL or public struct
 
 ```txt
 src/
-├── app/
-│   ├── (dashboard)/
-│   │   ├── page.tsx
-│   │   ├── users/
-│   │   └── settings/
-│   ├── (public)/
-│   │   ├── page.tsx
-│   │   └── about/
-│   └── (auth)/
-│       ├── login/
-│       └── register/
-│
 ├── modules/
 │   ├── (dashboard)/
-│   │   ├── billing/
-│   │   ├── analytics/
-│   │   └── users/
+│   │   ├── orders/
+│   │   ├── procducts/
+│   │   └── team/
 │   └── (public)/
 │       ├── landing/
 │       └── pricing/
