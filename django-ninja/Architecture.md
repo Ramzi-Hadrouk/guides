@@ -1,14 +1,18 @@
 # Django-Ninja Architecture Guide (Scalable Enterprise Version)
 
+> **Disclaimer:** All code snippets, module names, class names, and examples throughout this document are **illustrative examples only**. Adapt them to your specific business domain, project requirements, and team conventions. Nothing here is prescriptive for a particular industry or application.
+
+---
+
 This architecture is designed for:
 
-* Large SaaS systems
-* Multi-team development
-* Django + Django-Ninja applications
-* Any SQL database (PostgreSQL, MySQL, SQLite, …) + Redis + Celery + Django Channels
-* Long-term maintainability
-* Feature isolation
-* Domain-driven backend systems
+- Large SaaS systems
+- Multi-team development
+- Django + Django-Ninja applications
+- Any SQL database (PostgreSQL, MySQL, SQLite, …) + Redis + Celery + Django Channels
+- Long-term maintainability
+- Feature isolation
+- Domain-driven backend systems
 
 The goal is not just folder organization. The real goals are **clear ownership**, **scalability**, **strict boundaries**, **low coupling**, **easier refactoring**, **safe deletion**, **team scalability**, **future microservice readiness**, and **localized domain ownership per module**.
 
@@ -24,21 +28,24 @@ backend/
 ├── apps/
 │   │
 │   │   # ─── Domain Group: Identity & Access ──────────────────────────────
-│   ├── utilisateurs/               # Module: users & auth
-│   ├── autorisations/              # Module: RBAC (roles, memberships, permissions)
+│   ├── users/                      # Module: users & auth
+│   ├── authorization/              # Module: RBAC (roles, memberships, permissions)
 │   │
-│   │   # ─── Domain Group: Clinical ─────────────────────────────────────────
-│   ├── medecins/                   # Module: doctors
-│   ├── cliniques/                  # Module: clinics + self-registration
-│   ├── patients/                   # Module: patient records
+│   │   # ─── Domain Group: Core Domain ────────────────────────────────────
+│   ├── organizations/              # Module: tenant/organization management
+│   ├── items/                      # Module: core business resource
+│   ├── customers/                  # Module: customer records
 │   │
-│   │   # ─── Domain Group: Scheduling & Booking ─────────────────────────────
-│   ├── rendez_vous/                # Module: appointments (booking, OCC)
+│   │   # ─── Domain Group: Operations ─────────────────────────────────────
+│   ├── orders/                     # Module: order processing
 │   ├── scheduling/                 # Module: time slots & availability
-│   ├── sous_services/              # Module: bookable subservices
+│   ├── catalog/                    # Module: product/service catalog
 │   │
-│   │   # ─── Domain Group: Discovery ─────────────────────────────────────────
-│   ├── recherche/                  # Module: full-text patient-facing search (read-only)
+│   │   # ─── Domain Group: Discovery ──────────────────────────────────────
+│   ├── search/                     # Module: full-text search (read-only)
+│   │
+│   │   # ─── Domain Group: Integrations ───────────────────────────────────
+│   ├── integrations/               # Module: third-party adapters
 │   │
 │   └── <module>/                   # Template — every module follows this layout
 │       ├── api/
@@ -52,9 +59,9 @@ backend/
 │       ├── services/               # Write use-cases (POST/PUT/PATCH/DELETE)
 │       │   ├── __init__.py         # Re-exports all service classes
 │       │   └── <entity>_services/  # One folder per domain entity
-│       │       ├── creer_<entity>_service.py
-│       │       ├── modifier_<entity>_service.py
-│       │       └── supprimer_<entity>_service.py
+│       │       ├── create_<entity>_service.py
+│       │       ├── update_<entity>_service.py
+│       │       └── delete_<entity>_service.py
 │       ├── repositories/
 │       │   └── django_repo.py      # Single concrete ORM implementation
 │       ├── cache/                  # Only for modules that need real-time Redis state
@@ -68,6 +75,7 @@ backend/
 │
 ├── core/
 │   ├── exceptions.py               # Base ApplicationError + error-to-HTTP mapping
+│   ├── responses.py                # Standardized API response schemas (Success, Error, Paginated)
 │   ├── permissions.py              # RBAC resolver and @requires_permission decorator
 │   └── pagination.py               # Shared pagination helpers
 │
@@ -99,23 +107,396 @@ Domain groups are **conceptual boundaries** inside the flat `apps/` directory th
 
 **Why use domain groups:**
 
-* Keep related bounded contexts visible in the codebase
-* Separate clinical, scheduling, identity, and discovery concerns clearly
-* Make ownership clearer for teams
-* Improve maintainability as the project grows
-* Reduce cognitive load by making bounded contexts explicit
+- Keep related bounded contexts visible in the codebase
+- Separate identity, core business, operations, and discovery concerns clearly
+- Make ownership clearer for teams
+- Improve maintainability as the project grows
+- Reduce cognitive load by making bounded contexts explicit
 
 **Standard domain groups:**
 
-| Domain Group | Modules | Responsibilities |
+| Domain Group | Example Modules | Responsibilities |
 | --- | --- | --- |
-| Identity & Access | utilisateurs, autorisations | Auth, users, RBAC, roles, memberships |
-| Clinical | medecins, cliniques, patients | Doctor records, clinic management, patient records |
-| Scheduling & Booking | rendez_vous, scheduling, sous_services | Appointments, time slots, bookable subservices |
-| Discovery | recherche | Full-text search, public browsing |
-| Integrations | integrations/* | Third-party system adapters (e.g. Medex) |
+| Identity & Access | users, authorization | Auth, users, RBAC, roles, memberships |
+| Core Domain | organizations, items, customers | Tenant management, core resources, customer records |
+| Operations | orders, scheduling, catalog | Order processing, time slots, product/service catalog |
+| Discovery | search | Full-text search, public browsing |
+| Integrations | integrations/* | Third-party system adapters |
 
 When adding a new module, assign it to an existing domain group, or establish a new group if it represents a genuinely independent bounded context with its own entities, writes, and reads.
+
+---
+
+# Naming Conventions
+
+All naming across the entire codebase must be in **English**. This ensures consistency, readability for international teams, and alignment with Python and Django ecosystem conventions.
+
+---
+
+## File Naming Rules
+
+- All file names use **`snake_case`**.
+- Service files follow the pattern: **`<verb>_<entity>_service.py`**
+  - `create_order_service.py`, `update_user_service.py`, `delete_item_service.py`
+- Repository files: **`django_repo.py`**, **`redis_repo.py`** (one per module, named by infrastructure)
+- API files: **`router.py`**, **`schemas.py`** (always these exact names inside `api/`)
+- Domain files: **`entities.py`**, **`value_objects.py`**, **`exceptions.py`**, **`rules.py`**
+- Task files: **`<descriptive_action>_task.py`**
+  - `send_welcome_email_task.py`, `process_order_task.py`
+- Test files: **`test_<feature>_<layer>.py`**
+  - `test_order_service_unit.py`, `test_item_router_integration.py`
+- Consumer files: **`consumers.py`**
+
+---
+
+## Class Naming Rules
+
+- All class names use **`PascalCase`**.
+- ORM model classes: **`<Entity>ORM`**
+  - `UserORM`, `OrderORM`, `OrganizationORM`, `ItemORM`
+- Domain entity classes: **`<Entity>`**
+  - `User`, `Order`, `Organization`, `Item`
+- Repository classes: **`Django<Entity>Repository`** or **`Redis<Entity>Repository`**
+  - `DjangoUserRepository`, `DjangoOrderRepository`, `RedisAuthorizationRepository`
+- Service classes: **`<Verb><Entity>Service`**
+  - `CreateOrderService`, `UpdateUserService`, `DeleteItemService`, `LoginService`
+- Schema classes: **`<Verb><Entity><Direction>Schema`**
+  - `CreateOrderRequestSchema`, `OrderResponseSchema`, `UpdateItemRequestSchema`
+- Exception classes: **`<Entity><Condition>Error`**
+  - `OrderNotFoundError`, `UserAlreadyExistsError`, `SlotUnavailableError`
+- Value Object classes: **`<Concept>`**
+  - `Email`, `PhoneNumber`, `Money`, `Slug`
+- Strategy ABCs: **`<Concept>Strategy`**
+  - `PriorityStrategy`, `PricingStrategy`, `DiscountStrategy`
+
+---
+
+## Method Naming Rules
+
+- All method names use **`snake_case`**.
+- Repository read methods: **`get_by_<field>`**, **`list_by_<field>`**, **`exists_by_<field>`**
+  - `get_by_id()`, `list_by_organization()`, `exists_by_email()`
+- Repository write methods: **`save`**, **`update`**, **`delete`**, **`bulk_create`**
+- Service public method: **`execute`** — always this exact name; the class name carries the intent
+- Domain rule functions: **`can_<action>`**, **`calculate_<result>`**, **`validate_<condition>`**
+  - `can_cancel_order()`, `calculate_priority()`, `validate_membership()`
+- Mapper methods (private): **`_map_to_domain`**, **`_map_to_orm`**
+
+---
+
+## Variable Naming Rules
+
+- All variable names use **`snake_case`**.
+- Boolean variables: **`is_<condition>`**, **`has_<feature>`**, **`can_<action>`**
+  - `is_active`, `has_permission`, `can_cancel`
+- Collections: plural form of the entity
+  - `orders`, `users`, `items`
+- IDs: **`<entity>_id`**
+  - `order_id`, `user_id`, `organization_id`
+- Timestamps: **`<event>_<time_unit>`**
+  - `created_at`, `updated_at`, `expires_on`
+
+---
+
+## URL / Endpoint Naming Rules
+
+- URL segments use **`kebab-case`**.
+- Plural nouns for collections: **`/api/v1/orders/`**
+- Nested resources: **`/api/v1/organizations/{org_id}/members/`**
+- Specific actions on a resource: **`/api/v1/orders/{order_id}/cancel/`**
+
+---
+
+## Redis Key Naming Rules
+
+- All Redis key segments use **English**.
+- Pattern: **`<domain>:<id>:<type>`**
+- Examples:
+  - `queue:{queue_id}:counter` → STRING — atomic INCR
+  - `queue:{queue_id}:state` → HASH — live state
+  - `slots:{org_id}:{catalog_id}:{date}` → HASH — TTL 60s
+  - `perm:{org_id}:{user_id}` → STRING — TTL 300s
+  - `search:{org_id}:{query}:{month}` → STRING — TTL 3600s
+  - `<domain>:{id}:state` → HASH — live state snapshot
+  - `pubsub:<domain>:{id}` → CHANNEL — entity-scoped events
+  - `session:<domain>:<code>` → STRING — short-lived (with TTL)
+
+---
+
+## Permission String Naming Rules
+
+- Pattern: **`<resource>:<action>`**
+- All lowercase, colon-separated.
+- No wildcards. No `manage` shorthand — always expand to discrete verbs.
+- Examples:
+  - `orders:create`, `orders:read`, `orders:update`, `orders:delete`
+  - `orders:own:read` — row-level scoping
+  - `organization:settings:write`, `organization:settings:read`
+  - `members:invite`, `members:deactivate`, `members:read`
+  - `roles:create`, `roles:update`, `roles:delete`
+
+---
+
+## Schema Field Naming Rules
+
+- All schema field names use **`snake_case`**.
+- Follow the same rules as variable naming above.
+- Examples: `order_id`, `status`, `created_at`, `is_active`, `duration_min`
+
+---
+
+## ORM Model Field Naming Rules
+
+- All field names use **`snake_case`**.
+- Follow the same rules as variable naming above.
+- Foreign key fields: **`<entity>_id`** (e.g., `organization_id`, `user_id`)
+- Examples: `ticket_number`, `status`, `created_at`, `is_active`, `duration_min`
+
+---
+
+# Standardized API Response Structure
+
+All API endpoints must return a unified, predictable JSON structure for both successful requests and errors. This ensures frontend clients, mobile apps, and third-party integrations can parse responses consistently without special-casing endpoints.
+
+---
+
+## Core Response Schemas
+
+The standard response envelopes are defined in `core/responses.py` using Pydantic generics. This allows type-safe payloads while maintaining a uniform outer shell.
+
+```python
+# Example only — adapt to your project
+
+# core/responses.py
+
+from typing import Any, Generic, TypeVar, Optional
+from pydantic import BaseModel
+
+
+T = TypeVar("T")
+
+
+class ErrorDetail(BaseModel):
+    """Schema for individual validation or business rule errors."""
+    field: Optional[str] = None
+    message: str
+    code: Optional[str] = None  # Machine-readable error code (e.g., "required", "invalid_format")
+
+
+class ApiResponse(BaseModel, Generic[T]):
+    """
+    Standard envelope for all successful responses.
+    """
+    success: bool = True
+    message: str = "Request successful"
+    data: Optional[T] = None
+
+
+class PaginatedData(BaseModel, Generic[T]):
+    """
+    Wrapper for paginated list data.
+    """
+    items: list[T]
+    total: int
+    page: int
+    size: int
+    pages: int
+
+
+class ErrorResponse(BaseModel):
+    """
+    Standard envelope for all error responses.
+    """
+    success: bool = False
+    message: str
+    errors: Optional[list[ErrorDetail]] = None
+```
+
+---
+
+## Success Response Contract
+
+Every successful endpoint response must be wrapped in `ApiResponse[T]`, where `T` is the specific schema of the returned data.
+
+**Single Item Response:**
+```json
+{
+  "success": true,
+  "message": "Item retrieved successfully",
+  "data": {
+    "id": "uuid",
+    "name": "Example Item",
+    "is_active": true
+  }
+}
+```
+
+**List Response (Paginated):**
+```json
+{
+  "success": true,
+  "message": "Items retrieved successfully",
+  "data": {
+    "items": [
+      { "id": "uuid", "name": "Item 1", "is_active": true }
+    ],
+    "total": 50,
+    "page": 1,
+    "size": 20,
+    "pages": 3
+  }
+}
+```
+
+**Deletion / Empty Data Response:**
+```json
+{
+  "success": true,
+  "message": "Item deleted successfully",
+  "data": null
+}
+```
+
+---
+
+## Error Response Contract
+
+All errors—whether validation errors, business rule violations, or system errors—must return the `ErrorResponse` schema with appropriate HTTP status codes.
+
+**Business Logic Error (e.g., 400, 403, 404, 409):**
+```json
+{
+  "success": false,
+  "message": "Order cannot be cancelled",
+  "errors": [
+    {
+      "field": null,
+      "message": "Orders that are already shipped cannot be cancelled",
+      "code": "order_already_shipped"
+    }
+  ]
+}
+```
+
+**Validation Error (e.g., 422):**
+```json
+{
+  "success": false,
+  "message": "Validation failed",
+  "errors": [
+    {
+      "field": "email",
+      "message": "Invalid email format",
+      "code": "invalid_format"
+    },
+    {
+      "field": "quantity",
+      "message": "Ensure this value is greater than 0",
+      "code": "min_value"
+    }
+  ]
+}
+```
+
+---
+
+## Global Exception Handler
+
+To enforce the error response structure automatically, register a global exception handler in `config/api.py`. Domain exceptions are caught and mapped to the `ErrorResponse`.
+
+```python
+# Example only — adapt to your project
+
+# config/api.py
+
+from ninja import NinjaAPI
+from ninja.errors import HttpError, ValidationError
+from core.exceptions import ApplicationError
+from core.responses import ErrorResponse, ErrorDetail
+
+api = NinjaAPI(
+    title="Platform API",
+    version="1.0.0",
+    docs_url="/docs/",
+    openapi_url="/openapi.json",
+)
+
+
+@api.exception_handler(ApplicationError)
+def application_error_handler(request, exc: ApplicationError):
+    """Handle custom domain exceptions."""
+    return api.create_response(
+        request,
+        ErrorResponse(
+            message=exc.message,
+            errors=[ErrorDetail(field=exc.field, message=exc.message, code=exc.code)],
+        ),
+        status_code=exc.status_code,
+    )
+
+
+@api.exception_handler(ValidationError)
+def validation_error_handler(request, exc: ValidationError):
+    """Handle Pydantic/Django-Ninja validation errors uniformly."""
+    errors = [
+        ErrorDetail(field=".".join(str(loc) for loc in err["loc"]), message=err["msg"], code=err["type"])
+        for err in exc.errors
+    ]
+    return api.create_response(
+        request,
+        ErrorResponse(message="Validation failed", errors=errors),
+        status_code=422,
+    )
+
+
+@api.exception_handler(HttpError)
+def http_error_handler(request, exc: HttpError):
+    """Handle standard HTTP errors (e.g., 403, 404)."""
+    return api.create_response(
+        request,
+        ErrorResponse(message=exc.message),
+        status_code=exc.status_code,
+    )
+```
+
+---
+
+## Base Domain Exception
+
+Update `core/exceptions.py` to support the fields required by the error handler:
+
+```python
+# Example only — adapt to your project
+
+# core/exceptions.py
+
+
+class ApplicationError(Exception):
+    """Base exception for all domain/business errors."""
+
+    def __init__(
+        self,
+        message: str = "An application error occurred",
+        status_code: int = 400,
+        code: str | None = None,
+        field: str | None = None,
+    ):
+        self.message = message
+        self.status_code = status_code
+        self.code = code
+        self.field = field
+        super().__init__(self.message)
+
+
+class NotFoundError(ApplicationError):
+    def __init__(self, message: str = "Resource not found", field: str | None = None):
+        super().__init__(message=message, status_code=404, code="not_found", field=field)
+
+
+class ConflictError(ApplicationError):
+    def __init__(self, message: str = "Resource conflict", field: str | None = None):
+        super().__init__(message=message, status_code=409, code="conflict", field=field)
+```
 
 ---
 
@@ -126,11 +507,12 @@ When adding a new module, assign it to an existing domain group, or establish a 
 | Layer | Description & Responsibilities | Allowed / Contains | Forbidden |
 | --- | --- | --- | --- |
 | config/settings/ | Environment-specific Django configuration. | Installed apps, database config, middleware, Celery broker, Redis URL, CORS, JWT settings. | Business logic, feature flags, domain rules. |
-| config/api.py | Django-Ninja root API instance and global router registration. | `NinjaAPI` instance, global exception handlers, `api.add_router()` calls. | Business logic, direct endpoint definitions. |
+| config/api.py | Django-Ninja root API instance and global router registration. | `NinjaAPI` instance, global exception handlers, `api.add_router()` calls, OpenAPI configuration. | Business logic, direct endpoint definitions. |
 | config/celery.py | Celery application instance and task auto-discovery. | `Celery()` instance, `autodiscover_tasks()`. | Task logic, service calls. |
-| core/ | Infrastructure layer providing the system's technical, business-agnostic foundation. | Base exception hierarchy, RBAC resolver, permission decorator, pagination helpers. | Business-specific models, feature execution, domain rules. |
+| core/ | Infrastructure layer providing the system's technical, business-agnostic foundation. | Base exception hierarchy, response wrappers, RBAC resolver, permission decorator, pagination helpers. | Business-specific models, feature execution, domain rules. |
 | core/exceptions.py | Base error hierarchy that all domain exceptions extend. | `ApplicationError`, `NotFoundError`, `ConflictError`, error-to-HTTP status mapping. | Feature-specific exception subclasses (those live in each module's `domain/exceptions.py`). |
-| core/permissions.py | Single source of truth for all RBAC resolution. | `requires_permission()` decorator, `a_la_permission()` resolver, live DB permission lookup. | Business logic beyond permission checking, ORM queries for non-auth purposes. |
+| core/responses.py | Standardized API response schemas. | `ApiResponse`, `PaginatedData`, `ErrorResponse`, `ErrorDetail`. | Business logic, domain imports. |
+| core/permissions.py | Single source of truth for all RBAC resolution. | `requires_permission()` decorator, `has_permission()` resolver, live DB permission lookup. | Business logic beyond permission checking, ORM queries for non-auth purposes. |
 
 ---
 
@@ -138,16 +520,16 @@ When adding a new module, assign it to an existing domain group, or establish a 
 
 | Layer | Description & Responsibilities | Allowed / Contains | Forbidden |
 | --- | --- | --- | --- |
-| api/router.py | HTTP controller. For reads, imports and calls the repository directly. For writes, imports and calls the service. | `@router` endpoints, schema validation, permission decorators, direct imports of repository and service classes. | Business logic, domain rules, ORM model imports, transaction management outside of service calls. |
+| api/router.py | HTTP controller. For reads, imports and calls the repository directly. For writes, imports and calls the service. | `@router` endpoints, schema validation, permission decorators, direct imports of repository and service classes, OpenAPI docstrings and tags, wrapping returns in `ApiResponse`. | Business logic, domain rules, ORM model imports, transaction management outside of service calls. |
 | api/schemas.py | Pydantic input/output shapes for the HTTP boundary. | Request schemas, response schemas, field-level syntax validators. | Domain entities, ORM models, business constraint validation. |
 | domain/entities.py | Pure, framework-independent domain models. | Pydantic `BaseModel` domain objects, computed properties, domain-level constraints. | ORM imports, Django imports, Redis, Celery, any I/O. |
-| domain/value_objects.py | Immutable, self-validating types wrapping primitives. | `Email`, `PhoneNumber`, `ClinicSlug` and similar types with built-in validators. | Mutable state, ORM references. |
-| domain/exceptions.py | Domain-specific exception classes. | `MedecinIntrouvableError`, `SlotIndisponibleError` — all subclasses of `core.exceptions.ApplicationError`. | HTTP status codes, Django exceptions. |
-| domain/rules.py | Pure business rule functions and strategy abstractions. | `peut_annuler_rdv()`, `calculer_priorite()`, `PrioriteStrategie` ABC and its subclasses. | I/O operations, ORM access, service calls. |
-| services/ | Write orchestration layer. One class per use-case, one method: `executer()`. | Domain imports, repository imports, cache imports, `transaction.atomic()`, post-commit event broadcasting. | `api/`, HTTP objects, ORM model imports (`models.py`). |
+| domain/value_objects.py | Immutable, self-validating types wrapping primitives. | `Email`, `PhoneNumber`, `Slug` and similar types with built-in validators. | Mutable state, ORM references. |
+| domain/exceptions.py | Domain-specific exception classes. | `OrderNotFoundError`, `SlotUnavailableError` — all subclasses of `core.exceptions.ApplicationError`. | HTTP status codes, Django exceptions. |
+| domain/rules.py | Pure business rule functions and strategy abstractions. | `can_cancel_order()`, `calculate_priority()`, `PriorityStrategy` ABC and its subclasses. | I/O operations, ORM access, service calls. |
+| services/ | Write orchestration layer. One class per use-case, one method: `execute()`. | Domain imports, repository imports, cache imports, `transaction.atomic()`, post-commit event broadcasting. | `api/`, HTTP objects, ORM model imports (`models.py`). |
 | repositories/django_repo.py | Concrete ORM data-access implementation. Owns all reads and writes for this module. | Django ORM queries, `_map_to_domain()` mappers, `_map_to_orm()` converters. Read methods and write methods are clearly sectioned. | Business logic, validation, HTTP concerns, service calls. |
 | cache/redis_repo.py | Redis interaction layer. Present only in modules that maintain live real-time state. | Redis read/write operations, key construction, TTL management, Lua scripts for atomic operations. | Services, repositories, API layer. |
-| tasks/ | Thin Celery task wrappers. Max 10 lines per task file. | `@shared_task` definitions, service class import and `executer()` call. | Business logic, ORM queries, multi-step orchestration. |
+| tasks/ | Thin Celery task wrappers. Max 10 lines per task file. | `@shared_task` definitions, service class import and `execute()` call. | Business logic, ORM queries, multi-step orchestration. |
 | consumers.py | Django Channels WebSocket consumers. | Subscribe, receive, forward to client. Zero business logic. | Service calls, ORM queries, domain rules. |
 | models.py | ORM model definition. | Field definitions, `Meta` class, `__str__`. Nothing else. | Business methods, validation logic, queryset filtering, `save()` overrides with logic. |
 | tests/unit/ | Fast, isolated unit tests with no DB or network I/O. | Domain entity tests, business rule tests, pure function tests, service tests with mocked repos. | Live ORM, HTTP calls, real Redis. |
@@ -155,49 +537,192 @@ When adding a new module, assign it to an existing domain group, or establish a 
 
 ---
 
+# OpenAPI Documentation
+
+All endpoints must be documented using Django-Ninja's built-in OpenAPI support. The OpenAPI spec is the single source of truth for API consumers and must stay accurate.
+
+---
+
+## Root API Configuration
+
+Configure the `NinjaAPI` instance in `config/api.py` with meaningful metadata:
+
+```python
+# Example only — adapt to your project
+
+from ninja import NinjaAPI
+
+api = NinjaAPI(
+    title="Platform API",
+    version="1.0.0",
+    description="API documentation for the platform. All endpoints require authentication unless explicitly marked as public.",
+    docs_url="/docs/",
+    openapi_url="/openapi.json",
+)
+```
+
+---
+
+## Router Tags
+
+Every module's router must declare a **tag** that groups its endpoints in the OpenAPI UI. Tags use the module's English name in plural form, `PascalCase` for display.
+
+```python
+# Example only — adapt to your project
+
+from ninja import Router
+
+router = Router(tags=["Orders"])
+```
+
+Register the router with the same tag in `config/api.py`:
+
+```python
+# Example only — adapt to your project
+
+from config.api import api
+from apps.orders.api.router import router as orders_router
+
+api.add_router("/orders/", orders_router, tags=["Orders"])
+```
+
+---
+
+## Endpoint Docstrings
+
+Every endpoint function must have a **docstring** that describes what it does. The first line is the summary; subsequent lines are the description.
+
+```python
+# Example only — adapt to your project
+
+@router.get("/orders/{order_id}/", response=ApiResponse[OrderResponseSchema])
+def get_order(request, order_id: UUID):
+    """
+    Retrieve a single order by ID.
+
+    Returns the full order details including items, status, and timestamps.
+    Raises 404 if the order does not exist.
+    """
+    ...
+```
+
+---
+
+## Response and Request Annotations
+
+All endpoints must declare their `response` type using the `ApiResponse[T]` wrapper schema. For `POST`/`PUT`/`PATCH`, the payload schema must be explicitly typed as a parameter.
+
+```python
+# Example only — adapt to your project
+
+@router.post("/orders/", response=ApiResponse[OrderResponseSchema])
+def create_order(request, payload: CreateOrderRequestSchema):
+    """Create a new order."""
+    ...
+
+
+@router.get("/orders/", response=ApiResponse[PaginatedData[OrderResponseSchema]])
+def list_orders(request, organization_id: UUID):
+    """List all orders for a given organization."""
+    ...
+```
+
+---
+
+## Operation IDs
+
+For endpoints that need stable, client-facing operation IDs (e.g., code generation), use the `operation_id` parameter:
+
+```python
+# Example only — adapt to your project
+
+@router.get("/orders/{order_id}/", response=ApiResponse[OrderResponseSchema], operation_id="getOrder")
+def get_order(request, order_id: UUID):
+    """Retrieve a single order by ID."""
+    ...
+```
+
+---
+
+## Deprecated Endpoints
+
+When an endpoint is being phased out, mark it with `deprecated=True` instead of removing it immediately:
+
+```python
+# Example only — adapt to your project
+
+@router.get("/orders/legacy/list/", response=ApiResponse[PaginatedData[OrderResponseSchema]], deprecated=True)
+def list_orders_legacy(request, organization_id: UUID):
+    """
+    [DEPRECATED] Use GET /orders/ instead.
+
+    Legacy list endpoint retained for backward compatibility.
+    Will be removed in v2.
+    """
+    ...
+```
+
+---
+
+## OpenAPI Rules Summary
+
+1. **Every endpoint must have a docstring** — first line is the summary, the rest is the description.
+2. **Every router must declare a tag** matching its module name.
+3. **Every endpoint must declare its `response` type** via the `response` parameter, wrapped in `ApiResponse[T]` or `ApiResponse[PaginatedData[T]]`.
+4. **Every `POST`/`PUT`/`PATCH` payload must be a typed schema parameter**, never raw `dict` or `Request`.
+5. **Use `operation_id`** when the auto-generated ID is not stable or readable enough for client generation.
+6. **Mark deprecated endpoints with `deprecated=True`**, do not silently remove them.
+7. **Keep the docstring in sync with the endpoint behavior** — stale docs are worse than no docs.
+
+---
+
 # SOLID Principles — Enforced Patterns
 
 ## Single Responsibility
 
-One service class per use-case, one public method: `executer()`.
+One service class per use-case, one public method: `execute()`.
 
 ```python
+# Example only — adapt to your project
+
 # ❌ WRONG — One class doing multiple unrelated things
-class CliniqueService:
-    def creer_clinique(self, donnees): ...
-    def modifier_horaires(self, donnees): ...
-    def supprimer_clinique(self, id): ...
+class OrganizationService:
+    def create_organization(self, data): ...
+    def update_schedule(self, data): ...
+    def delete_organization(self, id): ...
 
 
 # ✅ CORRECT — One class per file in a domain-specific folder
 
-# cliniques/services/clinique_services/creer_clinique_service.py
-class CreerCliniqueService:
-    def executer(self, donnees: dict) -> Clinique: ...
+# organizations/services/organization_services/create_organization_service.py
+class CreateOrganizationService:
+    def execute(self, data: dict) -> Organization: ...
 
-# cliniques/services/clinique_services/modifier_horaires_service.py
-class ModifierHorairesService:
-    def executer(self, clinique_id: UUID, donnees: dict) -> Clinique: ...
+# organizations/services/organization_services/update_schedule_service.py
+class UpdateScheduleService:
+    def execute(self, organization_id: UUID, data: dict) -> Organization: ...
 
-# cliniques/services/clinique_services/supprimer_clinique_service.py
-class SupprimerCliniqueService:
-    def executer(self, clinique_id: UUID) -> None: ...
+# organizations/services/organization_services/delete_organization_service.py
+class DeleteOrganizationService:
+    def execute(self, organization_id: UUID) -> None: ...
 ```
 
-**Service directory example — `autorisations` module:**
+**Service directory example — `authorization` module:**
 
 ```
-apps/autorisations/services/
+# Example only — adapt to your project
+
+apps/authorization/services/
 ├── __init__.py
 ├── membership_services/
 │   ├── __init__.py
-│   ├── inviter_membre_service.py
-│   ├── desactiver_membre_service.py
-│   └── changer_role_service.py
+│   ├── invite_member_service.py
+│   ├── deactivate_member_service.py
+│   └── change_role_service.py
 └── role_services/
     ├── __init__.py
-    ├── creer_role_service.py
-    └── mettre_a_jour_permissions_service.py
+    ├── create_role_service.py
+    └── update_permissions_service.py
 ```
 
 ---
@@ -207,24 +732,26 @@ apps/autorisations/services/
 Variant behaviour is added by subclassing, never by editing existing service code.
 
 ```python
-# apps/rendez_vous/domain/rules.py
+# Example only — adapt to your project
+
+# apps/orders/domain/rules.py
 
 from abc import ABC, abstractmethod
 
 
-class PrioriteStrategie(ABC):
+class PriorityStrategy(ABC):
     @abstractmethod
-    def calculer_score(self, ordre: int) -> float: ...
+    def calculate_score(self, position: int) -> float: ...
 
 
-class PrioriteNormale(PrioriteStrategie):
-    def calculer_score(self, ordre: int) -> float:
-        return float(ordre)
+class NormalPriority(PriorityStrategy):
+    def calculate_score(self, position: int) -> float:
+        return float(position)
 
 
-class PrioriteUrgence(PrioriteStrategie):
-    def calculer_score(self, ordre: int) -> float:
-        return -1000.0 + float(ordre)
+class UrgentPriority(PriorityStrategy):
+    def calculate_score(self, position: int) -> float:
+        return -1000.0 + float(position)
 ```
 
 Services consume the strategy via a parameter — a new priority type requires a new subclass, never an `if/elif` chain in the service.
@@ -233,13 +760,13 @@ Services consume the strategy via a parameter — a new priority type requires a
 
 ## Liskov Substitution
 
-Repository classes must honour the full contract they advertise. If you swap `DjangoMedecinRepository` for a `MockMedecinRepository` in tests, every method must behave identically in terms of return types and raised exceptions. The mock is a drop-in replacement — no special-casing allowed.
+Repository classes must honour the full contract they advertise. If you swap `DjangoOrderRepository` for a `MockOrderRepository` in tests, every method must behave identically in terms of return types and raised exceptions. The mock is a drop-in replacement — no special-casing allowed.
 
 ---
 
 ## Interface Segregation
 
-Repositories expose only what their consumers actually call. Read-heavy flows (e.g. `recherche` endpoints) only touch read methods; they never import write operations. If a module's repository grows unwieldy, split it into `django_read_repo.py` and `django_write_repo.py` without changing the callers.
+Repositories expose only what their consumers actually call. Read-heavy flows (e.g., `search` endpoints) only touch read methods; they never import write operations. If a module's repository grows unwieldy, split it into `django_read_repo.py` and `django_write_repo.py` without changing the callers.
 
 ---
 
@@ -262,70 +789,76 @@ core/ ← api/, services/
 Services own all write use-cases. They import repositories directly via normal Python imports — no constructor injection, no interface parameters.
 
 ```python
-# apps/medecins/services/medecin_services/creer_medecin_service.py
+# Example only — adapt to your project
+
+# apps/items/services/item_services/create_item_service.py
 
 from django.db import transaction
 
-from apps.medecins.repositories.django_repo import DjangoMedecinRepository
-from apps.medecins.domain.entities import Medecin
-from apps.medecins.domain.exceptions import MedecinExisteDejaError
+from apps.items.repositories.django_repo import DjangoItemRepository
+from apps.items.domain.entities import Item
+from apps.items.domain.exceptions import ItemAlreadyExistsError
 
 
-class CreerMedecinService:
-    def executer(self, donnees: dict) -> Medecin:
-        repo = DjangoMedecinRepository()
+class CreateItemService:
+    def execute(self, data: dict) -> Item:
+        repo = DjangoItemRepository()
 
-        if repo.obtenir_par_email(donnees["email"]):
-            raise MedecinExisteDejaError()
+        if repo.get_by_name(data["name"]):
+            raise ItemAlreadyExistsError()
 
         with transaction.atomic():
-            return repo.sauvegarder(donnees)
+            return repo.save(data)
 ```
 
 **Real-world examples across modules:**
 
 ```python
-# apps/utilisateurs/services/auth_services/login_service.py
+# Example only — adapt to your project
+
+# apps/users/services/auth_services/login_service.py
 class LoginService:
-    def executer(self, email: str, password: str) -> TokenPair: ...
+    def execute(self, email: str, password: str) -> TokenPair: ...
 
-# apps/cliniques/services/clinique_services/enregistrer_clinique_service.py
-class EnregistrerCliniqueService:
+# apps/organizations/services/organization_services/register_organization_service.py
+class RegisterOrganizationService:
     """
-    Clinic self-registration — one atomic transaction:
-    1. Create clinic record (with owner_user_id)
-    2. Seed clinic_roles (ADMIN, DOCTOR, STAFF)
+    Organization self-registration — one atomic transaction:
+    1. Create organization record (with owner_user_id)
+    2. Seed organization_roles (ADMIN, MANAGER, MEMBER)
     3. Seed role_permissions per default matrix
-    4. Create clinic_memberships for owner → ADMIN role
+    4. Create organization_memberships for owner → ADMIN role
     """
-    def executer(self, donnees: dict) -> Clinique: ...
+    def execute(self, data: dict) -> Organization: ...
 
-# apps/autorisations/services/membership_services/inviter_membre_service.py
-class InviterMembreService:
-    def executer(self, donnees: dict) -> dict: ...
+# apps/authorization/services/membership_services/invite_member_service.py
+class InviteMemberService:
+    def execute(self, data: dict) -> dict: ...
 ```
 
 **Cross-module reads inside a write service** — import the other module's repository directly:
 
 ```python
-# apps/rendez_vous/services/rendez_vous_services/creer_rendez_vous_service.py
+# Example only — adapt to your project
+
+# apps/orders/services/order_services/create_order_service.py
 
 from django.db import transaction
 
-from apps.rendez_vous.repositories.django_repo import DjangoRendezVousRepository
-from apps.medecins.repositories.django_repo import DjangoMedecinRepository   # cross-module read
-from apps.rendez_vous.domain.exceptions import MedecinIntrouvableError, SlotIndisponibleError
+from apps.orders.repositories.django_repo import DjangoOrderRepository
+from apps.items.repositories.django_repo import DjangoItemRepository       # cross-module read
+from apps.orders.domain.exceptions import ItemNotFoundError, SlotUnavailableError
 
 
-class CreerRendezVousService:
-    def executer(self, donnees: dict) -> RendezVous:
-        medecin_repo = DjangoMedecinRepository()
-        if not medecin_repo.obtenir_par_id(donnees["medecin_id"]):
-            raise MedecinIntrouvableError()
+class CreateOrderService:
+    def execute(self, data: dict) -> Order:
+        item_repo = DjangoItemRepository()
+        if not item_repo.get_by_id(data["item_id"]):
+            raise ItemNotFoundError()
 
-        repo = DjangoRendezVousRepository()
+        repo = DjangoOrderRepository()
         with transaction.atomic():
-            return repo.sauvegarder(donnees)
+            return repo.save(data)
 ```
 
 ---
@@ -335,65 +868,65 @@ class CreerRendezVousService:
 The repository is the **only place that touches the ORM**. It owns all read and write queries for its module and maps between ORM models and domain entities. Read methods and write methods are clearly sectioned inside the same class.
 
 ```python
-# apps/medecins/repositories/django_repo.py
+# Example only — adapt to your project
+
+# apps/items/repositories/django_repo.py
 
 from uuid import UUID
 
-from apps.medecins.models import MedecinORM
-from apps.medecins.domain.entities import Medecin
+from apps.items.models import ItemORM
+from apps.items.domain.entities import Item
 
 
-class DjangoMedecinRepository:
+class DjangoItemRepository:
 
     # ── Reads ─────────────────────────────────────────────────────────────────
 
-    def obtenir_par_id(self, medecin_id: UUID) -> Medecin | None:
+    def get_by_id(self, item_id: UUID) -> Item | None:
         try:
-            return self._map_to_domain(MedecinORM.objects.get(id=medecin_id))
-        except MedecinORM.DoesNotExist:
+            return self._map_to_domain(ItemORM.objects.get(id=item_id))
+        except ItemORM.DoesNotExist:
             return None
 
-    def obtenir_par_email(self, email: str) -> Medecin | None:
+    def get_by_name(self, name: str) -> Item | None:
         try:
-            return self._map_to_domain(MedecinORM.objects.get(email=email.lower()))
-        except MedecinORM.DoesNotExist:
+            return self._map_to_domain(ItemORM.objects.get(name=name.lower()))
+        except ItemORM.DoesNotExist:
             return None
 
-    def lister_par_clinique(self, clinic_id: UUID) -> list[Medecin]:
+    def list_by_organization(self, organization_id: UUID) -> list[Item]:
         return [
             self._map_to_domain(orm)
-            for orm in MedecinORM.objects.filter(clinic_id=clinic_id, est_actif=True)
+            for orm in ItemORM.objects.filter(organization_id=organization_id, is_active=True)
         ]
 
     # ── Writes ────────────────────────────────────────────────────────────────
 
-    def sauvegarder(self, donnees: dict) -> Medecin:
-        orm = MedecinORM.objects.create(**self._map_to_orm(donnees))
+    def save(self, data: dict) -> Item:
+        orm = ItemORM.objects.create(**self._map_to_orm(data))
         return self._map_to_domain(orm)
 
-    def mettre_a_jour(self, medecin_id: UUID, donnees: dict) -> Medecin:
-        MedecinORM.objects.filter(id=medecin_id).update(**self._map_to_orm(donnees))
-        return self._map_to_domain(MedecinORM.objects.get(id=medecin_id))
+    def update(self, item_id: UUID, data: dict) -> Item:
+        ItemORM.objects.filter(id=item_id).update(**self._map_to_orm(data))
+        return self._map_to_domain(ItemORM.objects.get(id=item_id))
 
-    def supprimer(self, medecin_id: UUID) -> None:
-        MedecinORM.objects.filter(id=medecin_id).delete()
+    def delete(self, item_id: UUID) -> None:
+        ItemORM.objects.filter(id=item_id).delete()
 
     # ── Mappers ───────────────────────────────────────────────────────────────
 
-    def _map_to_domain(self, orm: MedecinORM) -> Medecin:
-        return Medecin(
+    def _map_to_domain(self, orm: ItemORM) -> Item:
+        return Item(
             id=orm.id,
-            email=orm.email,
-            nom=orm.nom,
-            prenom=orm.prenom,
-            est_actif=orm.est_actif,
+            name=orm.name,
+            description=orm.description,
+            is_active=orm.is_active,
         )
 
-    def _map_to_orm(self, donnees: dict) -> dict:
+    def _map_to_orm(self, data: dict) -> dict:
         return {
-            "email": donnees["email"].lower(),
-            "nom": donnees["nom"],
-            "prenom": donnees["prenom"],
+            "name": data["name"].lower(),
+            "description": data["description"],
         }
 ```
 
@@ -401,63 +934,92 @@ class DjangoMedecinRepository:
 
 # API Layer — HTTP Controllers
 
-The API layer is **thin by law**. It delegates immediately — never implements. For reads (GET), it imports and calls the repository. For writes (POST/PUT/PATCH/DELETE), it imports and calls the service.
+The API layer is **thin by law**. It delegates immediately — never implements. For reads (GET), it imports and calls the repository. For writes (POST/PUT/PATCH/DELETE), it imports and calls the service. All return types use the standardized `ApiResponse` wrapper.
 
 ```python
-# apps/medecins/api/router.py
+# Example only — adapt to your project
+
+# apps/items/api/router.py
 
 from uuid import UUID
 from ninja import Router
 from ninja.errors import HttpError
 
 from core.permissions import requires_permission
-from apps.medecins.api.schemas import CreerMedecinSchema, MedecinSchema
-from apps.medecins.repositories.django_repo import DjangoMedecinRepository
-from apps.medecins.services.medecin_services.creer_medecin_service import CreerMedecinService
-from apps.medecins.services.medecin_services.supprimer_medecin_service import SupprimerMedecinService
+from core.responses import ApiResponse, PaginatedData
+from apps.items.api.schemas import CreateItemRequestSchema, ItemResponseSchema
+from apps.items.repositories.django_repo import DjangoItemRepository
+from apps.items.services.item_services.create_item_service import CreateItemService
+from apps.items.services.item_services.delete_item_service import DeleteItemService
 
-router = Router()
+router = Router(tags=["Items"])
 
 
 # ── GET ───────────────────────────────────────────────────────────────────────
 
-@router.get("/clinics/{clinic_id}/medecins/", response=list[MedecinSchema])
-def lister_medecins(request, clinic_id: UUID):
-    repo = DjangoMedecinRepository()
-    return repo.lister_par_clinique(clinic_id)
+@router.get("/organizations/{organization_id}/items/", response=ApiResponse[PaginatedData[ItemResponseSchema]])
+def list_items(request, organization_id: UUID):
+    """
+    List all active items for an organization.
+
+    Returns a paginated list of items filtered by the given organization.
+    """
+    repo = DjangoItemRepository()
+    items = repo.list_by_organization(organization_id)
+    # Note: Pagination logic omitted for brevity; apply core.pagination helpers here
+    return ApiResponse(
+        message="Items retrieved successfully",
+        data=PaginatedData(items=items, total=len(items), page=1, size=50, pages=1),
+    )
 
 
-@router.get("/medecins/{medecin_id}/", response=MedecinSchema)
-def obtenir_medecin(request, medecin_id: UUID):
-    repo = DjangoMedecinRepository()
-    medecin = repo.obtenir_par_id(medecin_id)
-    if not medecin:
-        raise HttpError(404, "Médecin introuvable")
-    return medecin
+@router.get("/items/{item_id}/", response=ApiResponse[ItemResponseSchema])
+def get_item(request, item_id: UUID):
+    """
+    Retrieve a single item by ID.
+
+    Returns the full item details. Raises 404 if not found.
+    """
+    repo = DjangoItemRepository()
+    item = repo.get_by_id(item_id)
+    if not item:
+        raise HttpError(404, "Item not found")
+    return ApiResponse(message="Item retrieved successfully", data=item)
 
 
 # ── POST / PUT / DELETE ───────────────────────────────────────────────────────
 
-@router.post("/clinics/{clinic_id}/medecins/", response=MedecinSchema)
-@requires_permission("medecins:create")
-def creer_medecin(request, clinic_id: UUID, payload: CreerMedecinSchema):
-    service = CreerMedecinService()
-    return service.executer(payload.dict() | {"clinic_id": clinic_id})
+@router.post("/organizations/{organization_id}/items/", response=ApiResponse[ItemResponseSchema])
+@requires_permission("items:create")
+def create_item(request, organization_id: UUID, payload: CreateItemRequestSchema):
+    """
+    Create a new item within an organization.
+
+    Validates the payload and delegates creation to the service layer.
+    """
+    service = CreateItemService()
+    item = service.execute(payload.dict() | {"organization_id": organization_id})
+    return ApiResponse(message="Item created successfully", data=item)
 
 
-@router.delete("/medecins/{medecin_id}/")
-@requires_permission("medecins:delete")
-def supprimer_medecin(request, medecin_id: UUID):
-    service = SupprimerMedecinService()
-    service.executer(medecin_id)
-    return {"success": True}
+@router.delete("/items/{item_id}/", response=ApiResponse)
+@requires_permission("items:delete")
+def delete_item(request, item_id: UUID):
+    """
+    Delete an item by ID.
+
+    Permanently removes the item. Requires items:delete permission.
+    """
+    service = DeleteItemService()
+    service.execute(item_id)
+    return ApiResponse(message="Item deleted successfully", data=None)
 ```
 
 ---
 
 # RBAC System
 
-> **This section governs `core/permissions.py` and the `autorisations` module.** The permission decorator touches every API endpoint in every module, so the contract here is non-negotiable.
+> **This section governs `core/permissions.py` and the `authorization` module.** The permission decorator touches every API endpoint in every module, so the contract here is non-negotiable.
 
 ## Architecture Decision: Manual Tenant-Scoped RBAC
 
@@ -465,9 +1027,9 @@ The platform uses manual RBAC instead of a third-party library (django-guardian,
 
 | Requirement | Library Support | Manual |
 | --- | :---: | :---: |
-| Per-clinic role scoping (same user, different roles in different clinics) | ❌ | ✅ |
-| Runtime-configurable permissions (clinic admin edits permissions via UI) | ❌ | ✅ |
-| Row-level scoping (`appointments:own:read`) | ❌ | ✅ |
+| Per-organization role scoping (same user, different roles in different organizations) | ❌ | ✅ |
+| Runtime-configurable permissions (org admin edits permissions via UI) | ❌ | ✅ |
+| Row-level scoping (`orders:own:read`) | ❌ | ✅ |
 | No library deprecation risk | ❌ | ✅ |
 
 ---
@@ -475,29 +1037,31 @@ The platform uses manual RBAC instead of a third-party library (django-guardian,
 ## `core/permissions.py` — Full Contract
 
 ```python
+# Example only — adapt to your project
+
 # core/permissions.py
 
 from uuid import UUID
 from functools import wraps
 from ninja.errors import HttpError
 
-from apps.autorisations.repositories.django_repo import DjangoAutorisationRepository
+from apps.authorization.repositories.django_repo import DjangoAuthorizationRepository
 
 
 # ─── Core Resolver ────────────────────────────────────────────────────────────
 
-def obtenir_permissions(user_id: UUID, clinic_id: UUID) -> set[str]:
+def get_permissions(user_id: UUID, organization_id: UUID) -> set[str]:
     """
     Single resolver — everything flows through here.
-    Returns the full permission set for a user in a clinic.
+    Returns the full permission set for a user in an organization.
     Live DB query — no cache.
     """
-    repo = DjangoAutorisationRepository()
-    return repo.obtenir_permissions(user_id, clinic_id)
+    repo = DjangoAuthorizationRepository()
+    return repo.get_permissions(user_id, organization_id)
 
 
-def a_la_permission(user_id: UUID, clinic_id: UUID, permission: str) -> bool:
-    return permission in obtenir_permissions(user_id, clinic_id)
+def has_permission(user_id: UUID, organization_id: UUID, permission: str) -> bool:
+    return permission in get_permissions(user_id, organization_id)
 
 
 # ─── Django-Ninja Decorator ───────────────────────────────────────────────────
@@ -505,15 +1069,15 @@ def a_la_permission(user_id: UUID, clinic_id: UUID, permission: str) -> bool:
 def requires_permission(permission: str):
     """
     Decorator for Django-Ninja endpoints.
-    Usage: @requires_permission("appointments:write")
-    Resolves clinic_id from path kwargs first, then falls back to request attribute.
+    Usage: @requires_permission("orders:write")
+    Resolves organization_id from path kwargs first, then falls back to request attribute.
     """
     def decorator(func):
         @wraps(func)
         def wrapper(request, *args, **kwargs):
-            clinic_id = kwargs.get("clinic_id") or getattr(request, "clinic_id", None)
-            if not clinic_id or not a_la_permission(request.user.id, clinic_id, permission):
-                raise HttpError(403, f"Permission requise: {permission}")
+            organization_id = kwargs.get("organization_id") or getattr(request, "organization_id", None)
+            if not organization_id or not has_permission(request.user.id, organization_id, permission):
+                raise HttpError(403, f"Permission required: {permission}")
             return func(request, *args, **kwargs)
         return wrapper
     return decorator
@@ -526,78 +1090,89 @@ def requires_permission(permission: str):
 All permission strings use explicit `(resource:action)` format. No wildcards. No `manage` shorthand — always expand to discrete verbs.
 
 ```
-# Clinical
-medecins:create       medecins:update       medecins:delete       medecins:read
+# Core domain
+items:create       items:update       items:delete       items:read
 
-# Scheduling
-appointments:write    appointments:read     appointments:own:read
+# Operations
+orders:write       orders:read        orders:own:read
 
-# Clinic management
-clinic:settings:write clinic:settings:read
+# Organization management
+organization:settings:write   organization:settings:read
 
 # RBAC
-members:invite        members:deactivate    members:read
-roles:create          roles:update          roles:delete
+members:invite      members:deactivate     members:read
+roles:create        roles:update           roles:delete
 ```
 
 ---
 
 ## Cache Invalidation Contract
 
-Any service that mutates `clinic_memberships` or `role_permissions` **must** call the cache invalidation helper **after** the DB transaction commits. Never inside `transaction.atomic()`.
+Any service that mutates `organization_memberships` or `role_permissions` **must** call the cache invalidation helper **after** the DB transaction commits. Never inside `transaction.atomic()`.
 
 ```python
-# apps/autorisations/services/membership_services/inviter_membre_service.py
+# Example only — adapt to your project
+
+# apps/authorization/services/membership_services/invite_member_service.py
 
 from django.db import transaction
 
-from apps.autorisations.repositories.django_repo import DjangoAutorisationRepository
-from apps.autorisations.cache.redis_repo import AutorisationsCacheRepo
+from apps.authorization.repositories.django_repo import DjangoAuthorizationRepository
+from apps.authorization.cache.redis_repo import AuthorizationCacheRepo
 
 
-class InviterMembreService:
-    def executer(self, donnees: dict) -> dict:
-        repo = DjangoAutorisationRepository()
-        cache = AutorisationsCacheRepo()
+class InviteMemberService:
+    def execute(self, data: dict) -> dict:
+        repo = DjangoAuthorizationRepository()
+        cache = AuthorizationCacheRepo()
 
         with transaction.atomic():
-            membership = repo.creer_membership(donnees)
+            membership = repo.create_membership(data)
 
         # Cache invalidation AFTER commit — never inside the atomic block
-        cache.invalider(clinic_id=donnees["clinic_id"], user_id=donnees["user_id"])
+        cache.invalidate(organization_id=data["organization_id"], user_id=data["user_id"])
         return membership
 ```
 
 ---
 
-## Row-Level Scoping (`appointments:own:read`)
+## Row-Level Scoping (`orders:own:read`)
 
-When a user holds only `appointments:own:read` (not the full `appointments:read`), the router applies an additional filter before calling the repository. Row-level scoping logic lives in the API layer (not in the repository, not in the service).
+When a user holds only `orders:own:read` (not the full `orders:read`), the router applies an additional filter before calling the repository. Row-level scoping logic lives in the API layer (not in the repository, not in the service).
 
 ```python
-# apps/rendez_vous/api/router.py
+# Example only — adapt to your project
 
-@router.get("/clinics/{clinic_id}/appointments/", response=list[RendezVousSchema])
-def lister_rendez_vous(request, clinic_id: UUID):
-    perms = obtenir_permissions(request.user.id, clinic_id)
-    repo  = DjangoRendezVousRepository()
+# apps/orders/api/router.py
 
-    if "appointments:read" in perms:
-        return repo.lister_par_clinique(clinic_id)
+@router.get("/organizations/{organization_id}/orders/", response=ApiResponse[PaginatedData[OrderResponseSchema]])
+def list_orders(request, organization_id: UUID):
+    """
+    List orders for an organization.
 
-    if "appointments:own:read" in perms:
-        auth_repo = DjangoAutorisationRepository()
-        doctor_id = auth_repo.obtenir_medecin_par_user(request.user.id, clinic_id)
-        return repo.lister_par_medecin(clinic_id, doctor_id) if doctor_id else []
+    Users with orders:read see all orders. Users with orders:own:read see only their own.
+    """
+    perms = get_permissions(request.user.id, organization_id)
+    repo  = DjangoOrderRepository()
 
-    raise HttpError(403, "Permission requise")
+    if "orders:read" in perms:
+        data = repo.list_by_organization(organization_id)
+        return ApiResponse(message="Orders retrieved successfully", data=data)
+
+    if "orders:own:read" in perms:
+        auth_repo = DjangoAuthorizationRepository()
+        assignee_id = auth_repo.get_assignee_by_user(request.user.id, organization_id)
+        data = repo.list_by_assignee(organization_id, assignee_id) if assignee_id else []
+        return ApiResponse(message="Orders retrieved successfully", data=data)
+
+    raise HttpError(403, "Permission required")
 ```
 
 ---
 
 # Real-Time State Layer (Redis)
 
-> **This section applies only to modules that maintain live, distributed state.** Purely CRUD modules (`medecins`, `cliniques`, `utilisateurs`, `autorisations`) do **not** need a `cache/` folder.
+> **This section applies only to modules that maintain live, distributed state.** Purely CRUD modules (`items`, `organizations`, `users`, `authorization`) do **not** need a `cache/` folder.
 
 ## Deciding If Your Module Needs Redis
 
@@ -608,49 +1183,49 @@ def lister_rendez_vous(request, clinic_id: UUID):
 
 | Module | Needs Redis? | Reason |
 | --- | :---: | --- |
-| `rendez_vous` | ❌ | Booking uses OCC on `time_slots` (DB-level); no live counters |
+| `orders` | ❌ | Booking uses OCC on `time_slots` (DB-level); no live counters |
 | `scheduling` | ⚠️ | Cache infrastructure exists but is disabled — preserved for future use |
-| `recherche` | ✅ | RediSearch index for multi-clinic discovery |
-| `autorisations` | ✅ | Permission cache (TTL 300s, key: `perm:{clinic_id}:{user_id}`) |
-| `cliniques` | ❌ | Pure CRUD |
-| `utilisateurs` | ❌ | Pure CRUD — rate limiting belongs at infrastructure/nginx layer |
-| `sous_services` | ❌ | CRUD |
+| `search` | ✅ | RediSearch index for multi-organization discovery |
+| `authorization` | ✅ | Permission cache (TTL 300s, key: `perm:{org_id}:{user_id}`) |
+| `organizations` | ❌ | Pure CRUD |
+| `users` | ❌ | Pure CRUD — rate limiting belongs at infrastructure/nginx layer |
+| `catalog` | ❌ | CRUD |
 
 ---
 
-## Key Naming Convention
+## Redis Key Naming Convention
 
-All Redis keys follow `<domain>:<id>:<type>`. Use French segment names.
+All Redis keys follow `<domain>:<id>:<type>`. All segments are in English.
 
 ```
 # Queue module
-file:{id_file}:compteur                         → STRING  — atomic INCR
-file:{id_file}:etat                             → HASH    — live state
-file:{id_file}:tickets                          → ZSET    — priority queue
+queue:{queue_id}:counter                          → STRING  — atomic INCR
+queue:{queue_id}:state                            → HASH    — live state
+queue:{queue_id}:tickets                          → ZSET    — priority queue
 
 # Slot availability
-slots:{clinic_id}:{sous_service_id}:{date}      → HASH    — TTL 60s
+slots:{org_id}:{catalog_id}:{date}                → HASH    — TTL 60s
 
 # Permission cache
-perm:{clinic_id}:{user_id}                      → STRING  — TTL 300s
+perm:{org_id}:{user_id}                           → STRING  — TTL 300s
 
 # Search cache
-search:{clinic_id}:{query}:{month}              → STRING  — TTL 3600s
+search:{org_id}:{query}:{month}                   → STRING  — TTL 3600s
 
 # Generic patterns
-<domain>:{id}:etat                              → HASH    — live state snapshot
-pubsub:<domain>:{id}                            → CHANNEL — entity-scoped events
-session:<domain>:{code}                         → STRING  — short-lived (with TTL)
+<domain>:{id}:state                               → HASH    — live state snapshot
+pubsub:<domain>:{id}                              → CHANNEL — entity-scoped events
+session:<domain>:<code>                           → STRING  — short-lived (with TTL)
 ```
 
 ---
 
 ## Redis Failure Recovery
 
-* Every Redis write must have a corresponding database write first. The SQL database is the source of truth.
-* A Celery management command must exist to rebuild Redis state from the DB on reconnect.
-* The rebuild command must be idempotent — safe to run multiple times without side effects.
-* Never call `KEYS *` in production — use `SCAN` + `DEL` in batches.
+- Every Redis write must have a corresponding database write first. The SQL database is the source of truth.
+- A Celery management command must exist to rebuild Redis state from the DB on reconnect.
+- The rebuild command must be idempotent — safe to run multiple times without side effects.
+- Never call `KEYS *` in production — use `SCAN` + `DEL` in batches.
 
 ---
 
@@ -666,15 +1241,17 @@ Never skip steps. The DB write always precedes the Redis write.
 
 ## Consumer Rules
 
-* Consumers only subscribe and forward. **Zero business logic in consumers.**
-* Consumers must handle disconnections gracefully — must never crash the server.
-* Channel names are entity-scoped:
+- Consumers only subscribe and forward. **Zero business logic in consumers.**
+- Consumers must handle disconnections gracefully — must never crash the server.
+- Channel names are entity-scoped:
 
 ```python
-"file_globale"          # queue module — all queue events
-"medecin_{id}"          # doctor-scoped events
-"rendez_vous_{id}"      # appointment-scoped events
-"clinique_{id}"         # clinic-scoped events
+# Example only — adapt to your project
+
+"queue_global"              # queue module — all queue events
+"item_{id}"                 # item-scoped events
+"order_{id}"                # order-scoped events
+"organization_{id}"         # organization-scoped events
 ```
 
 ---
@@ -684,40 +1261,48 @@ Never skip steps. The DB write always precedes the Redis write.
 When a service or the API needs data from another module, it imports that module's `django_repo.py` directly. No injected interfaces, no adapter layers — just a plain import.
 
 ```python
+# Example only — adapt to your project
+
 # ✅ CORRECT — service reads from another module via direct repository import
-# apps/rendez_vous/services/rendez_vous_services/creer_rendez_vous_service.py
+# apps/orders/services/order_services/create_order_service.py
 
-from apps.rendez_vous.repositories.django_repo import DjangoRendezVousRepository
-from apps.medecins.repositories.django_repo import DjangoMedecinRepository
-from apps.autorisations.repositories.django_repo import DjangoAutorisationRepository
+from apps.orders.repositories.django_repo import DjangoOrderRepository
+from apps.items.repositories.django_repo import DjangoItemRepository
+from apps.authorization.repositories.django_repo import DjangoAuthorizationRepository
 
 
-class CreerRendezVousService:
-    def executer(self, donnees: dict) -> RendezVous:
-        if not DjangoMedecinRepository().obtenir_par_id(donnees["medecin_id"]):
-            raise MedecinIntrouvableError()
+class CreateOrderService:
+    def execute(self, data: dict) -> Order:
+        if not DjangoItemRepository().get_by_id(data["item_id"]):
+            raise ItemNotFoundError()
 
         with transaction.atomic():
-            return DjangoRendezVousRepository().sauvegarder(donnees)
+            return DjangoOrderRepository().save(data)
 
 
 # ✅ CORRECT — router assembles a composite read from multiple modules
-# apps/recherche/api/router.py
+# apps/search/api/router.py
 
-from apps.recherche.repositories.django_repo import DjangoRechercheRepository
-from apps.sous_services.repositories.django_repo import DjangoSousServiceRepository
+from apps.search.repositories.django_repo import DjangoSearchRepository
+from apps.catalog.repositories.django_repo import DjangoCatalogRepository
 
 
-@router.get("/search/")
-def rechercher(request, q: str, clinic_id: UUID | None = None):
-    repo = DjangoRechercheRepository()
-    return repo.rechercher(clinic_id=clinic_id, requete=q)
+@router.get("/search/", response=ApiResponse[list[SearchResultSchema]])
+def search(request, q: str, organization_id: UUID | None = None):
+    """
+    Full-text search across the platform.
+
+    Returns matching results from the search index.
+    """
+    repo = DjangoSearchRepository()
+    results = repo.search(organization_id=organization_id, query=q)
+    return ApiResponse(message="Search completed successfully", data=results)
 
 
 # ❌ WRONG — importing another module's ORM model directly
-from apps.medecins.models import MedecinORM            # forbidden outside medecins/repositories/
-from apps.autorisations.models import RoleORM          # forbidden outside autorisations/repositories/
-from apps.sous_services.models import SousServiceORM   # forbidden outside sous_services/repositories/
+from apps.items.models import ItemORM              # forbidden outside items/repositories/
+from apps.authorization.models import RoleORM      # forbidden outside authorization/repositories/
+from apps.catalog.models import CatalogItemORM     # forbidden outside catalog/repositories/
 ```
 
 ---
@@ -742,6 +1327,8 @@ core              ❌        ❌           ❌           ❌       ❌      ❌ 
 # Automated Enforcement (pyproject.toml)
 
 ```toml
+# Example only — adapt to your project
+
 [tool.importlinter]
 root_packages = ["apps", "core"]
 include_external_packages = true
@@ -807,87 +1394,67 @@ forbidden_modules = [
 name = "core/permissions.py is the only RBAC entry point"
 type = "forbidden"
 source_modules = ["apps.*.services", "apps.*.api"]
-forbidden_modules = ["apps.autorisations.repositories.django_repo"]
+forbidden_modules = ["apps.authorization.repositories.django_repo"]
 # All permission resolution must go through core/permissions.py
 
 [[tool.importlinter.contracts]]
-name = "recherche module is read-only — no services allowed"
+name = "search module is read-only — no services allowed"
 type = "forbidden"
-source_modules = ["apps.recherche"]
-forbidden_modules = ["apps.recherche.services"]
+source_modules = ["apps.search"]
+forbidden_modules = ["apps.search.services"]
 ```
-
----
-
-# Naming Conventions
-
-| Layer | Language | Rule / Example |
-| --- | --- | --- |
-| ORM model class names | French | `RendezVousORM`, `MedecinORM`, `CliniqueORM`, `SousServiceORM`, `RoleCliniqueORM` |
-| ORM model field names | French | `numero_ticket`, `statut`, `cree_le`, `id_medecin`, `est_actif`, `duree_min`, `vecteur_recherche` |
-| Domain entity names | French | `RendezVous`, `Medecin`, `Clinique`, `SousService`, `MembreClinique` |
-| Repository class names | English | `DjangoMedecinRepository`, `DjangoAutorisationRepository`, `DjangoRechercheRepository` |
-| Repository method names | French | `sauvegarder`, `obtenir_par_id`, `lister_par_clinique`, `supprimer`, `obtenir_permissions` |
-| Service class names | English | `CreerMedecinService`, `InviterMembreService`, `EnregistrerCliniqueService` |
-| Service method name | French | `executer` — always singular; the class name carries the intent |
-| Pydantic schema field names | French | `numero_ticket`, `statut`, `id_medecin`, `id_sous_service`, `duree_min` |
-| File naming | snake_case French | `creer_medecin_service.py`, `django_repo.py`, `redis_repo.py` |
-| Redis key segments | French | `file:{id}:etat`, `slots:{clinic_id}:{sous_service_id}:{date}`, `perm:{clinic_id}:{user_id}` |
-| Permission strings | English | `appointments:write`, `appointments:own:read`, `clinic:settings:write` |
-| Python local variable names | French | `rendez_vous`, `medecin`, `clinique`, `sous_service`, `resultats` |
-| API endpoint URLs | English | `/api/v1/appointments/`, `/api/v1/clinics/{id}/members/`, `/api/v1/search/` |
-| Documentation and comments | English | All in-code docs and PR descriptions stay in English |
-| Full-text search vector field *(PostgreSQL only)* | French | `vecteur_recherche` — a `TSVECTOR` computed column; applies only when using PostgreSQL. On other engines use the database's native full-text equivalent and rename accordingly. |
 
 ---
 
 # Architectural Rules
 
-* **Rule 1 (Domain Purity):** The `domain/` layer must stay 100% pure: no Django imports, no ORM models, no Redis, no Celery, no HTTP concerns. Test: `pytest apps/<module>/domain/` must pass with `DJANGO_SETTINGS_MODULE` unset.
+- **Rule 1 (Domain Purity):** The `domain/` layer must stay 100% pure: no Django imports, no ORM models, no Redis, no Celery, no HTTP concerns. Test: `pytest apps/<module>/domain/` must pass with `DJANGO_SETTINGS_MODULE` unset.
 
-* **Rule 2 (Thin API Layer):** `router.py` contains zero business logic. For reads: import and call the repository directly. For writes: import and call the service. No orchestration beyond that single delegation.
+- **Rule 2 (Thin API Layer):** `router.py` contains zero business logic. For reads: import and call the repository directly. For writes: import and call the service. No orchestration beyond that single delegation.
 
-* **Rule 3 (Services Own All Writes):** Every POST/PUT/PATCH/DELETE must go through a service class with an `executer()` method. Never write to the ORM directly from `router.py`.
+- **Rule 3 (Services Own All Writes):** Every POST/PUT/PATCH/DELETE must go through a service class with an `execute()` method. Never write to the ORM directly from `router.py`.
 
-* **Rule 4 (Repositories Own ORM Access):** ORM model imports (`models.py`) are strictly forbidden everywhere except `repositories/django_repo.py` and `tasks/`. Any layer that needs data goes through the repository.
+- **Rule 4 (Repositories Own ORM Access):** ORM model imports (`models.py`) are strictly forbidden everywhere except `repositories/django_repo.py` and `tasks/`. Any layer that needs data goes through the repository.
 
-* **Rule 5 (One Service, One Use-Case):** A service class has exactly one public method (`executer()`) performing exactly one use-case. If two actions are needed, that is two service classes in two files.
+- **Rule 5 (One Service, One Use-Case):** A service class has exactly one public method (`execute()`) performing exactly one use-case. If two actions are needed, that is two service classes in two files.
 
-* **Rule 6 (No Constructor Injection):** Services and repositories are never passed as parameters to `__init__`. All dependencies are imported directly at the top of the file and instantiated at call time. No DI containers. No Protocol interfaces.
+- **Rule 6 (No Constructor Injection):** Services and repositories are never passed as parameters to `__init__`. All dependencies are imported directly at the top of the file and instantiated at call time. No DI containers. No Protocol interfaces.
 
-* **Rule 7 (No Django Signals):** Never use Django signals for domain side effects. Call `core/websocket.py` broadcast helpers explicitly from services, after the DB write, outside `transaction.atomic()`.
+- **Rule 7 (No Django Signals):** Never use Django signals for domain side effects. Call `core/websocket.py` broadcast helpers explicitly from services, after the DB write, outside `transaction.atomic()`.
 
-* **Rule 8 (Thin Tasks):** Celery tasks are thin shims — they instantiate a service and call `executer()`. Maximum 10 lines per task file. All logic lives in the service.
+- **Rule 8 (Thin Tasks):** Celery tasks are thin shims — they instantiate a service and call `execute()`. Maximum 10 lines per task file. All logic lives in the service.
 
-* **Rule 9 (Zero Consumer Logic):** WebSocket consumers subscribe, receive, and forward. They never call services, touch the ORM, or apply business rules.
+- **Rule 9 (Zero Consumer Logic):** WebSocket consumers subscribe, receive, and forward. They never call services, touch the ORM, or apply business rules.
 
-* **Rule 10 (Exception Hierarchy):** All domain exceptions extend `core.exceptions.ApplicationError`. Services raise domain exceptions. The API maps them to HTTP status codes via a global exception handler in `config/api.py`.
+- **Rule 10 (Exception Hierarchy):** All domain exceptions extend `core.exceptions.ApplicationError`. Services raise domain exceptions. The API maps them to HTTP status codes via a global exception handler in `config/api.py`.
 
-* **Rule 11 (Redis After DB):** Every Redis write must be preceded by a successful database write. The SQL database is the source of truth. Redis is the speed layer. They are never out of sync for more than one operation.
+- **Rule 11 (Redis After DB):** Every Redis write must be preceded by a successful database write. The SQL database is the source of truth. Redis is the speed layer. They are never out of sync for more than one operation.
 
-* **Rule 12 (Cache Invalidation Outside Transactions):** Never call cache invalidation functions inside `transaction.atomic()`. Call them after the `with` block closes, or register them via `transaction.on_commit()`.
+- **Rule 12 (Cache Invalidation Outside Transactions):** Never call cache invalidation functions inside `transaction.atomic()`. Call them after the `with` block closes, or register them via `transaction.on_commit()`.
 
-* **Rule 13 (No Cross-Module ORM Imports):** When a service or the router needs data from another module, it imports and uses that module's `django_repo.py`. Direct imports of another module's `models.py` are forbidden everywhere except within that module's own repository.
+- **Rule 13 (No Cross-Module ORM Imports):** When a service or the router needs data from another module, it imports and uses that module's `django_repo.py`. Direct imports of another module's `models.py` are forbidden everywhere except within that module's own repository.
 
-* **Rule 14 (Permission Resolution via Core):** All permission checks must flow through `core/permissions.py`. No service, repository, or router may directly query `clinic_memberships` or `role_permissions` for authorization purposes.
+- **Rule 14 (Permission Resolution via Core):** All permission checks must flow through `core/permissions.py`. No service, repository, or router may directly query `organization_memberships` or `role_permissions` for authorization purposes.
 
-* **Rule 15 (Explicit Permission Strings):** Permission strings are explicit `(resource:action)` tuples. No wildcards. No `manage` shorthand — expand to `create`, `update`, `delete` individually.
+- **Rule 15 (Explicit Permission Strings):** Permission strings are explicit `(resource:action)` tuples. No wildcards. No `manage` shorthand — expand to `create`, `update`, `delete` individually.
 
-* **Rule 16 (System Roles Are Immutable):** System roles (`is_system = TRUE`) may not be deleted or have their permissions modified. Enforce this as a domain rule in `autorisations/domain/rules.py`.
+- **Rule 16 (System Roles Are Immutable):** System roles (`is_system = TRUE`) may not be deleted or have their permissions modified. Enforce this as a domain rule in `authorization/domain/rules.py`.
 
-* **Rule 17 (Clinic Must Have One Admin):** A clinic must always have at least one active ADMIN member. `desactiver_membre_service` and `changer_role_service` must verify this invariant before committing.
+- **Rule 17 (Organization Must Have One Admin):** An organization must always have at least one active ADMIN member. `deactivate_member_service` and `change_role_service` must verify this invariant before committing.
 
-* **Rule 18 (No Naming Dumping Grounds):** Folder names like `misc/`, `helpers/`, `common/`, or `other/` are strictly banned. Every folder must have a clear, bounded responsibility.
+- **Rule 18 (No Naming Dumping Grounds):** Folder names like `misc/`, `helpers/`, `common/`, or `other/` are strictly banned. Every folder must have a clear, bounded responsibility.
 
-* **Rule 19 (Encapsulate Business Conditionals):** Never write loose boolean conditions inside routers or services (e.g. `user.role == 'ADMIN' and clinic.is_active`). Wrap them in descriptive functions in `domain/rules.py` (e.g. `peut_gerer_clinique(user, clinic)`).
+- **Rule 19 (Encapsulate Business Conditionals):** Never write loose boolean conditions inside routers or services (e.g., `user.role == 'ADMIN' and org.is_active`). Wrap them in descriptive functions in `domain/rules.py` (e.g., `can_manage_organization(user, org)`).
 
-* **Rule 20 (Safe Deletability):** If dropping a module's folder breaks an unrelated module, your domain boundaries are bleeding. Each module must be independently removable.
+- **Rule 20 (Safe Deletability):** If dropping a module's folder breaks an unrelated module, your domain boundaries are bleeding. Each module must be independently removable.
 
-* **Rule 21 (No KEYS \* in Production Redis):** Use `SCAN` + `DEL` in batches. `KEYS *` blocks the Redis event loop and is forbidden in any environment with real data.
+- **Rule 21 (No KEYS \* in Production Redis):** Use `SCAN` + `DEL` in batches. `KEYS *` blocks the Redis event loop and is forbidden in any environment with real data.
 
-* **Rule 22 (Search Module Is Read-Only):** The `recherche` module contains no services and no write repository methods. It reads from its RediSearch index only. No writes, no mutations.
+- **Rule 22 (Search Module Is Read-Only):** The `search` module contains no services and no write repository methods. It reads from its RediSearch index only. No writes, no mutations.
 
-* **Rule 23 (Slot Scope Is Explicit):** Valid slot ownership combinations are: clinic-level (`service_id=null, subservice_id=null`), service-level (`service_id!=null, subservice_id=null`), or subservice-level (`service_id!=null, subservice_id!=null`). Missing identifiers are never inferred automatically.
+- **Rule 23 (OpenAPI Documentation Is Mandatory):** Every endpoint must have a docstring, a declared response type, and a router tag. Stale or missing documentation is a bug, not a nice-to-have.
+
+- **Rule 24 (Standardized API Responses):** All endpoints must return the `ApiResponse[T]` wrapper for successful responses. All errors must be caught by the global exception handler and formatted into the `ErrorResponse` schema. Never return raw data or ad-hoc JSON structures.
 
 ---
 
@@ -895,8 +1462,8 @@ forbidden_modules = ["apps.recherche.services"]
 
 | If you see this | Module context | The fix |
 | --- | --- | --- |
-| `MedecinORM.objects.get()` inside a service | any | Move to `DjangoMedecinRepository`; import the repo class in the service |
-| Business logic in `router.py` | any | Extract to a service class; router calls `service.executer()` |
+| `ItemORM.objects.get()` inside a service | any | Move to `DjangoItemRepository`; import the repo class in the service |
+| Business logic in `router.py` | any | Extract to a service class; router calls `service.execute()` |
 | `router.py` writing to ORM directly | any | Create a service class — router never writes |
 | Selector class anywhere | any | Selectors are removed from this architecture; reads go through repositories |
 | `class BaseXxxService: def __init__(self, repo): ...` | any | Remove DI from base; services import repos directly at the top of the file |
@@ -907,15 +1474,15 @@ forbidden_modules = ["apps.recherche.services"]
 | One service file handling two unrelated use-cases | any | Split into two files, one per use-case |
 | Strategy behaviour hardcoded with `if/elif` in a service | any | Create a strategy subclass in `domain/rules.py` |
 | Permission check duplicated in service AND router | any | Checks live only in `core/permissions.py` via decorator |
-| `from apps.medecins.models import MedecinORM` inside `rendez_vous/` | rendez_vous | Import `DjangoMedecinRepository` and use its read methods |
-| `from apps.autorisations.models import RoleORM` in any service | any | Import `DjangoAutorisationRepository` instead |
-| Global role assigned with no `clinic_id` scope | autorisations | All roles are per-clinic; `clinic_id` is always NOT NULL |
-| `cache.keys("search:*")` or `KEYS search:*` in production | recherche | Use `SCAN` + `DEL` in batches |
+| `from apps.items.models import ItemORM` inside `orders/` | orders | Import `DjangoItemRepository` and use its read methods |
+| `from apps.authorization.models import RoleORM` in any service | any | Import `DjangoAuthorizationRepository` instead |
+| Global role assigned with no `organization_id` scope | authorization | All roles are per-organization; `organization_id` is always NOT NULL |
+| `cache.keys("search:*")` or `KEYS search:*` in production | search | Use `SCAN` + `DEL` in batches |
 | Cache invalidation inside `transaction.atomic()` | any | Move after the `with` block closes or register via `on_commit` |
-| `duration_min` read from `ServiceORM` | any | `duration_min` lives on `SousServiceORM` exclusively |
-| `vecteur_recherche` manually assigned in application code | sous_services / cliniques | The column is owned by a database-level trigger (PostgreSQL) — Python assignment is silently overwritten |
-| `recherche` module importing a write repository or service | recherche | The `recherche` module is read-only by Rule 22 |
-| Slot created with mixed or inferred scope | scheduling | Enforce the explicit scope matrix in the service layer |
+| `search` module importing a write repository or service | search | The `search` module is read-only by Rule 22 |
+| Endpoint missing a docstring or response type | any | Add docstring and `response=ApiResponse[T]` annotation per Rule 23 |
+| Endpoint returning raw data or un-wrapped dict | any | Wrap response in `ApiResponse(data=...)` per Rule 24 |
+| Raising `HttpError` directly for domain business rules | any | Raise a domain exception subclassing `ApplicationError`; let the global handler format the `ErrorResponse` |
 
 ---
 
@@ -933,3 +1500,5 @@ forbidden_modules = ["apps.recherche.services"]
 | **Cognitive Load** | Lower | Developers only need to reason about one module directory at a time. |
 | **Microservice Readiness** | Good | Modules are prepared for future decomposition into standalone services. |
 | **Simplicity** | Excellent | No DI containers, no injected interfaces, no selector indirection — direct imports reduce mental overhead without sacrificing layer clarity. |
+| **API Discoverability** | Excellent | OpenAPI documentation is enforced on every endpoint, ensuring the spec is always accurate and up to date. |
+| **Client Integration** | Excellent | Standardized response structures eliminate special-casing on the frontend, reducing integration bugs and parsing logic. |
