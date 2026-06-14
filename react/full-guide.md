@@ -155,7 +155,7 @@ src/
 ├── modules/
 │   ├── (dashboard)/
 │   │   ├── orders/
-│   │   ├── procducts/
+│   │   ├── products/
 │   │   └── team/
 │   └── (public)/
 │       ├── landing/
@@ -252,6 +252,337 @@ The parentheses indicate that the folder is a **group folder**, not a business e
   * feature/i18n/ handles strings unique to that exact use case.
   * module/i18n/ manages copy shared across a domain context.
   * shared/i18n/ handles truly generic UI words (e.g., "Save", "Cancel").
+
+
+
+# Naming Conventions & Code Style
+
+The naming system must be consistent across the entire frontend codebase. The goal is not cosmetic uniformity; it is faster navigation, safer refactoring, and lower cognitive load across large teams.
+
+## General Rules
+
+- All names must be written in **English**.
+- Prefer descriptive names over abbreviations.
+- Use established ecosystem abbreviations only when they are widely understood: `API`, `UI`, `URL`, `ID`, `DTO`, `RTK`, `SSR`, `CSR`.
+- Do not reuse the same word for different concepts.
+- Do not invent vague names such as `data`, `stuff`, `temp`, `thing`, `manager`, `helper`, or `common`.
+- Keep the naming style consistent inside a single artifact type. Do not mix conventions without a clear reason.
+
+## Folder Naming Rules
+
+- Ordinary folders use **`kebab-case`**.
+  - Examples: `dashboard-layout`, `public-layout`, `patient-records`, `appointment-history`
+- Route groups use parentheses only when the framework supports them.
+  - Examples: `(dashboard)`, `(public)`, `(auth)`
+- Feature and module folder names should describe a bounded context or business area.
+  - Good: `billing`, `appointments`, `clinic-settings`
+  - Bad: `misc`, `helpers`, `other`, `stuff`
+- Shared technical folders should keep their role obvious.
+  - Examples: `components`, `hooks`, `utils`, `types`, `constants`, `validation`, `tests`
+- Every domain module must expose a public entry point through `index.ts`.
+
+## File Naming Rules
+
+### React Components
+
+- Single-component files use **`PascalCase.tsx`**.
+  - Examples: `DashboardHeader.tsx`, `UserCard.tsx`, `ClinicTable.tsx`
+- If a folder contains multiple component files, each file name must still match the exported component name.
+- Do not use generic file names for components like `index.tsx` unless the file is intentionally a thin composition entry.
+
+### Hooks
+
+- Custom hooks use **`use` + PascalCase**.
+  - Examples: `useAuth.ts`, `useDebounce.ts`, `useClinicFilters.ts`, `useAppointmentPermissions.ts`
+- The hook name must describe the behavior, not the implementation.
+- Do not prefix non-hooks with `use`.
+
+### State and Store Files
+
+- Redux slices use **`<feature>.slice.ts`** or **`<feature>-slice.ts`**, depending on the repository standard.
+- Zustand stores use **`<feature>.store.ts`**.
+- Selectors use **`<feature>.selectors.ts`**.
+- RTK Query API files use **`<feature>.api.ts`**.
+- Async side-effect files should clearly indicate the scope of the workflow.
+  - Examples: `appointments.effects.ts`, `billing.workflow.ts`
+
+### Utilities, Services, Mappers, Validators
+
+- Non-component TypeScript files use **`snake_case.ts`** when the file is a pure helper, mapper, service, or validator.
+  - Examples: `format_date.ts`, `map_user_dto.ts`, `calculate_totals.ts`, `validate_email.ts`
+- Keep the file name aligned with the primary responsibility of the file.
+- Do not place multiple unrelated responsibilities in the same file.
+
+### Route Files
+
+- In Next.js App Router, route entry files must use the framework names exactly:
+  - `page.tsx`
+  - `layout.tsx`
+  - `loading.tsx`
+  - `error.tsx`
+  - `not-found.tsx`
+  - `route.ts`
+- Route folder names should use **`kebab-case`** and reflect the public URL structure.
+  - Examples: `appointments`, `patient-records`, `billing-invoices`
+- Route groups can be used to organize areas without changing the public route path.
+
+### Test Files
+
+- Test files use one of these patterns:
+  - `*.test.ts`
+  - `*.test.tsx`
+  - `*.spec.ts`
+  - `*.spec.tsx`
+- The subject under test should come first and the test type should come last.
+  - Examples: `use_auth.test.ts`, `UserCard.test.tsx`, `billing.service.spec.ts`
+- Keep test names aligned with the thing being verified.
+
+### Style and Asset Files
+
+- CSS Module files should match the owning component or route name.
+  - Examples: `DashboardHeader.module.css`, `user-card.module.css`
+- Global style files should describe their scope.
+  - Examples: `globals.css`, `theme.css`, `tokens.css`
+- Static asset names should be descriptive and stable.
+  - Examples: `logo-dark.svg`, `empty-state-appointments.png`
+
+## Class and Type Naming Rules
+
+- All class names use **`PascalCase`**.
+- Component classes, providers, contexts, managers, and factories must all be named with intent.
+- Never use `I` prefixes for interfaces.
+- Never use `T` prefixes for types unless there is a strong team-wide convention already in place.
+
+### Component and Provider Names
+
+- React components use **`PascalCase`**.
+  - Examples: `UserCard`, `AppointmentTable`, `ClinicSidebar`
+- Context objects use **`<Domain>Context`**.
+  - Example: `AuthContext`
+- Context providers use **`<Domain>Provider`**.
+  - Example: `AuthProvider`
+- Error boundaries use **`<Domain>ErrorBoundary`**.
+  - Example: `DashboardErrorBoundary`
+
+### Domain and View Model Names
+
+- Domain entities use **`<Concept>`**.
+  - Examples: `User`, `Appointment`, `Invoice`
+- View models use **`<Concept>ViewModel`** when a transformation layer is needed.
+  - Examples: `UserViewModel`, `AppointmentViewModel`
+- DTOs use **`<Concept>Dto`**.
+  - Examples: `UserDto`, `CreateAppointmentDto`
+- Request payload types use **`<Action><Concept>Input`** or **`<Action><Concept>Request`**.
+  - Examples: `CreateUserInput`, `UpdateClinicRequest`
+- Response types use **`<Concept>Response`** or **`<Concept>Dto`** when the transport layer is explicit.
+  - Examples: `UserResponse`, `InvoiceDto`
+
+### State and API Names
+
+- Redux slices use **`<feature>Slice`** for the exported slice object and **`<feature>Reducer`** for the reducer output when needed.
+  - Examples: `authSlice`, `appointmentsSlice`
+- RTK Query APIs use **`<feature>Api`**.
+  - Examples: `authApi`, `clinicApi`
+- Selectors use **`select<Thing>`**.
+  - Examples: `selectCurrentUser`, `selectActiveClinic`
+- Action creators and handlers must describe intent.
+  - Examples: `setActiveClinic`, `resetFilters`, `toggleSidebar`
+
+### Utility and Service Class Names
+
+- Utility classes or service objects use **`<Concept>Service`** when they perform an action-oriented workflow.
+  - Examples: `NotificationService`, `AuthService`
+- Pure calculation or transformation helpers should be named after the result they produce.
+  - Examples: `CurrencyFormatter`, `DateRangeBuilder`, `PermissionResolver`
+- Avoid naming a class `Manager` unless it truly coordinates multiple subsystems.
+
+### Enum and Constant Names
+
+- Enum names use **`PascalCase`**.
+  - Examples: `UserRole`, `AppointmentStatus`
+- Enum values use **`UPPER_SNAKE_CASE`**.
+  - Examples: `ADMIN`, `PENDING`, `CANCELLED`
+- Constants use **`UPPER_SNAKE_CASE`**.
+  - Examples: `MAX_UPLOAD_SIZE`, `DEFAULT_PAGE_SIZE`, `API_TIMEOUT_MS`
+- Boolean constants should be explicit and readable.
+  - Examples: `IS_PRODUCTION`, `HAS_LIVE_DATA`
+
+## Method and Function Naming Rules
+
+- All function and method names use **`camelCase`** in TypeScript.
+- Names must describe behavior clearly and be stable over time.
+
+### Event Handlers
+
+- Event handlers use **`handle` + noun/verb phrase**.
+  - Examples: `handleSubmit`, `handleChange`, `handleCloseDialog`
+- Props callbacks use **`on` + noun/verb phrase**.
+  - Examples: `onSubmit`, `onClose`, `onSelect`
+- Avoid ambiguous names like `doStuff`, `run`, or `action`.
+
+### Data Access and Workflow Functions
+
+- Query functions use **`get`**, **`list`**, **`find`**, or **`fetch`** depending on behavior.
+  - Examples: `getUserById`, `listAppointments`, `findActiveClinic`, `fetchPatientSummary`
+- Mutation functions use **`create`**, **`update`**, **`delete`**, **`archive`**, **`assign`**, or **`activate`**.
+  - Examples: `createInvoice`, `updateProfile`, `deleteNotification`, `assignDoctor`
+- Synchronous transformation functions use **`map`**, **`build`**, **`format`**, **`normalize`**, **`parse`**, or **`calculate`**.
+  - Examples: `mapUserDtoToUser`, `buildQueryParams`, `formatCurrency`, `normalizeAppointmentStatus`
+- Boolean checks use **`is`**, **`has`**, **`can`**, **`should`**, or **`supports`**.
+  - Examples: `isActive`, `hasPermission`, `canEditClinic`, `shouldRetryRequest`
+
+### React and UI-Specific Functions
+
+- Component helper functions should be named by intent, not implementation detail.
+- Derived UI selectors should be named like selectors, not generic utilities.
+  - Example: `selectVisibleAppointments`
+- Do not create unnamed inline business rules inside JSX when a named function would make the condition understandable.
+
+### Async Naming
+
+- Promise-returning functions should still describe the real action.
+  - Examples: `fetchDashboardData`, `saveClinicSettings`, `loadUserPermissions`
+- Do not mark names with `Async` unless the codebase has a very specific reason to do so. The action name is usually enough.
+
+## Variable Naming Rules
+
+- All variable names use **`camelCase`**.
+- Choose names based on meaning and lifecycle, not type.
+- Avoid generic names such as `data`, `item`, `value`, `tmp`, `res`, `obj`, or `stuff` unless the scope is trivial.
+
+### Booleans
+
+- Boolean variables use **`is`**, **`has`**, **`can`**, **`should`**, or **`needs`**.
+  - Examples: `isLoading`, `hasError`, `canSubmit`, `shouldRefetch`, `needsSync`
+
+### Collections
+
+- Arrays and grouped collections use plural nouns.
+  - Examples: `users`, `appointments`, `notifications`, `availableDoctors`
+
+### Identifiers
+
+- IDs use **`<entity>Id`**.
+  - Examples: `userId`, `clinicId`, `appointmentId`
+- Foreign identifiers follow the same rule.
+  - Examples: `assignedDoctorId`, `organizationId`
+
+### Dates and Times
+
+- Use clear time-based names.
+  - Examples: `createdAt`, `updatedAt`, `expiresAt`, `scheduledFor`
+
+### Derived Values
+
+- Computed values should describe the result.
+  - Examples: `totalPrice`, `activeTab`, `visibleRows`, `remainingSlots`
+
+## UI and JSX Naming Rules
+
+- Components should be named as visual nouns or purpose-driven blocks.
+  - Examples: `AppointmentCard`, `BillingSummary`, `ClinicToolbar`
+- Sections inside a page should describe the part of the interface they represent.
+  - Examples: `FiltersSection`, `OverviewPanel`, `ActivityFeed`
+- Avoid names that encode layout mechanics instead of meaning.
+  - Bad: `LeftWrapper`, `BlueBox`, `Div1`
+- Prefer composition over deeply nested anonymous wrappers.
+
+## Context, Hook, and Store Naming Rules
+
+- Custom hooks should expose one clear responsibility.
+- Hook names must start with `use`.
+- Store hooks and context hooks should make the domain obvious.
+  - Examples: `useAuthStore`, `useAppointmentFilters`, `useClinicPermissions`
+- Context provider files should align with the exported provider name.
+- Keep state-related names stable and easy to search.
+
+## API, DTO, and Contract Naming Rules
+
+- API files, request objects, and response objects must be named for the business action they represent.
+- Backend DTOs must never leak directly into UI state or component props.
+- Use mapper functions to convert transport shapes into UI-safe contracts.
+- Keep contract names explicit:
+  - `CreateClinicRequest`
+  - `ClinicResponse`
+  - `UpdateAppointmentInput`
+  - `NormalizedPatientRecord`
+
+## i18n Key Naming Rules
+
+- Translation keys use **lowercase dot notation**.
+- Keep keys stable and descriptive.
+- Prefer domain-scoped keys over globally shared ambiguous keys.
+  - Examples: `appointments.title`, `appointments.actions.create`, `billing.errors.payment_failed`
+- Avoid free-form keys that duplicate full sentences everywhere.
+- Shared generic labels should remain in the shared i18n layer.
+
+## CSS and Styling Naming Rules
+
+- Use class names that describe the role of the element, not the visual color or position.
+  - Good: `card`, `header`, `filters`, `summary`
+  - Bad: `redBox`, `topLeft`, `bigButton`
+- CSS module class names should remain local to the component.
+- Do not encode responsive behavior in class names. Let the CSS or utility system handle that.
+
+## Test Naming Rules
+
+- Test names must describe behavior.
+- Prefer explicit assertion-focused names.
+  - Examples: `renders user details`, `prevents submission when invalid`, `loads appointments on mount`
+- Keep test file names aligned with the unit under test.
+- Use the same public name as the component or function being tested.
+
+## Boundary Naming Rules
+
+- Public entry files should use **`index.ts`**.
+- Public exports must be intentional, not blind.
+- A folder is not a boundary unless it has a clear public surface.
+- Names used across module boundaries should not expose internal implementation details.
+- Prefer `ProfileCard` over `UserSummaryV2WidgetFactory` and similar long-term liabilities.
+
+## Naming Examples by Layer
+
+### shared/
+
+- UI components: `Button`, `Dialog`, `Tabs`
+- Hooks: `useDebounce`, `useOutsideClick`
+- Utilities: `formatDate`, `normalizeText`
+- Types: `ButtonVariant`, `NavigationItem`
+
+### modules/
+
+- Domain modules: `billing`, `appointments`, `notifications`
+- Feature folders: `create-invoice`, `assign-doctor`, `cancel-appointment`
+- Domain services: `calculateInvoiceTotal`, `canCancelAppointment`
+
+### feature/
+
+- Feature components: `AppointmentForm`, `PatientSummary`
+- Feature hooks: `useAppointmentForm`, `usePatientSearch`
+- Feature state: `appointmentSlice`, `patientSelectors`
+
+## Naming Anti-Patterns to Avoid
+
+- `data`, `stuff`, `thing`, `temp`, `new`, `old`
+- `helper`, `helpers`, `common`, `utils` as dumping grounds
+- `Manager` when the object only wraps one operation
+- `Main`, `Default`, `Base` when the real meaning is available
+- `Component1`, `index1`, `final`, `final_v2`, `new_final`
+- Mixing casing styles in the same folder
+- Copying backend naming blindly into the UI without a frontend contract layer
+
+## Naming Priority Order
+
+When naming is unclear, use this order:
+
+1. Business meaning
+2. Layer responsibility
+3. Public API clarity
+4. Technical convention
+5. Conciseness
+
+If a shorter name becomes ambiguous, the shorter name is wrong.
+
 
 ---
 
