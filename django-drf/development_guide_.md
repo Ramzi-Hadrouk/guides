@@ -193,6 +193,12 @@ use-case or integration operation
   - 2.23 API versioning and compatibility
   - 2.24 Data migrations and deployment safety
   - 2.25 AI agent rules and borders
+  - 2.26 API documentation and OpenAPI governance (docs separated from code)
+  - 2.27 Business scoping and data isolation (multi-business ERP)
+  - 2.28 Structured logging standards
+  - 2.29 Dependency and environment management
+  - 2.30 Git workflow, review, and definition of done
+  - 2.31 Seed and reference data management
 - Chapter 3 — Strict Quality Checklist
 
 ---
@@ -1544,6 +1550,130 @@ If no concrete answer exists, do not add the abstraction.
 
 ---
 
+## 2.26 API documentation and OpenAPI governance (docs separated from code)
+
+The API contract is an **artifact, not a by-product**. Documentation must not live only as annotations scattered across the codebase, and it must never be "always generated at runtime" with no frozen reference — that is how silent drift begins.
+
+### Source of truth
+
+- The versioned OpenAPI specification lives in the repository under `docs/api/`, split per bounded context:
+
+```text
+docs/api/
+├── v1/
+│   ├── openapi.yaml                 # racine : info, servers, security, tags
+│   ├── paths/
+│   │   ├── securite.auth.yaml
+│   │   ├── referentiel.yaml
+│   │   ├── organisation.business.yaml
+│   │   ├── ventes.documents.yaml
+│   │   └── paiements.yaml
+│   ├── components/
+│   │   ├── schemas/                 # un fichier par module
+│   │   ├── responses/               # catalogue des codes d'erreur
+│   │   └── parameters/              # pagination, filtres, scope
+│   └── CHANGELOG.md                 # évolutions du contrat par version
+```
+
+- Reusable components (`EnveloppeReponse`, `Pagination`, `ErreurMetier`) are defined **once** and `$ref`'d — never re-inlined per path.
+- The error-code catalog in `components/responses` mirrors the exception taxonomy of §2.5 exactly. Adding a business exception without its documented response is a defect.
+
+### Spec-first workflow
+
+1. Contract change is proposed and reviewed in the same PR as the implementation (or in a preceding PR for large features).
+2. Implementation must match the spec; reviewers reject code that deviates "just slightly".
+3. Runtime generation (e.g. drf-spectacular) is permitted only to **verify** the implementation, never as the published artifact.
+
+### CI enforcement
+
+The pipeline must, at minimum:
+
+- validate and lint the spec (structural + style rules);
+- run contract tests (e.g. schemathesis) of spec-vs-implementation on real endpoints;
+- detect breaking changes between the base version and the PR (e.g. oasdiff) and fail when a breaking change is not accompanied by an explicit version bump per §2.23.
+
+### Rules
+
+- Annotations/decorators in code carry only descriptions and examples — never structural contract decisions.
+- Do not publish auto-generated docs to consumers as the only reference; publish the reviewed artifact.
+- Deprecated fields are marked `deprecated` with a removal note in `CHANGELOG.md`; removal follows the versioning policy.
+- Every endpoint documented: request schema, response schema (success **and** each business error), pagination behavior, required permissions.
+
+---
+
+## 2.27 Business scoping and data isolation (multi-business ERP)
+
+This system is a single-installation, multi-business ERP. `business_id` is the isolation key; `contexte_id` qualifies rows that differ per data context (reel/declare). These rules are architectural constraints, not options.
+
+### Model rules
+
+- Every business-scoped model carries `business_id`; every context-sensitive model additionally carries `contexte_id`.
+- Uniqueness is scoped: `unique(business_id[, contexte_id], reference)` — never global unless explicitly justified.
+- Reference/identity tables exempt from scoping (devise, wilaya, contexte, role, …) must be documented as exempt in the model's docstring.
+
+### Request-scope rules
+
+- The active `business_id`/`contexte_id` are resolved **server-side** from the authenticated session/token — never accepted from request bodies or query parameters (extends §2.8).
+- All business querysets pass through one shared, testable scoping mechanism (manager, queryset method, or middleware-provided context). An unscoped queryset over business data in a request path is a defect.
+- Object-level checks: accessing an object of another business by ID returns **404, not 403** — the response must not confirm the object's existence (IDOR rule).
+
+### Defense in depth
+
+- Application layer scoping is the first enforcement point.
+- PostgreSQL Row-Level Security policies on `business_id`/`contexte_id`, keyed to session variables, are the second. RLS is enabled in staging/production and covered by dedicated bypass-attempt tests.
+- Global admin cross-business reads are explicit, audited actions; writes always require an explicit business + context selection.
+
+### Testing
+
+- Every resource's API test suite includes at least one cross-business access case expecting 404.
+- RLS bypass tests run against real PostgreSQL.
+
+---
+
+## 2.28 Structured logging standards
+
+Structured logs are machine-parsed; ad-hoc `print()`/`f-string` logging in business code is prohibited.
+
+- Format: JSON, one event per line, with at minimum: `timestamp`, `level`, `logger`, `correlation_id`, and where available `actor_id`, `business_id`, `contexte_id`.
+- Level semantics: `ERROR` = actionable failure; `WARNING` = degraded but functional; `INFO` = business-relevant event (document validated, task retried); `DEBUG` = development detail, disabled in production.
+- Log at boundaries: request in/out (middleware), task start/end/outcome, external call outcome. Do not log inside loops per-item at INFO.
+- Never log: passwords, raw or hashed tokens, full request bodies, secrets, personal data beyond operational need.
+- The three-way separation of §2.21 is preserved: technical logs (this section), business audit (`audit_log`), accounting history — each has its own semantics and retention.
+
+---
+
+## 2.29 Dependency and environment management
+
+- All dependencies are pinned (lockfile or exact pins); production images contain no floating versions.
+- CI runs a dependency vulnerability audit (e.g. pip-audit); upgrades land as isolated, reviewed PRs — never mixed with feature code.
+- Python version and base image are pinned; builds are reproducible.
+- `.env.example` is the complete, current contract of external configuration; a missing required variable must fail fast at startup (checklist O).
+- Local setup is scripted (docker-compose or make targets) and identical in shape to production configuration — no undocumented manual steps.
+
+---
+
+## 2.30 Git workflow, review, and definition of done
+
+- Short-lived branches; one logical change per PR; conventional commits.
+- Any PR containing a migration is flagged in the title/description; destructive migrations require explicit reviewer sign-off (§2.24).
+- PR description template: bounded context touched, API contract impact, migration/rollback notes, concurrency/idempotency impact, test evidence.
+- Changes to financial or stock code paths require a second reviewer familiar with the domain.
+- CI green is necessary, not sufficient. **Definition of done** = applicable Chapter 3 checklist passes + tests written + migrations reviewed + OpenAPI artifact updated (§2.26) + observability considered (§2.21/§2.28).
+
+---
+
+## 2.31 Seed and reference data management
+
+Reference data (devise, wilaya, unite_mesure, contexte, permissions, …) is part of the system's correctness, not decoration.
+
+- Ships via **data migrations** committed with the schema history, ordered before dependent migrations.
+- Seed logic is idempotent (`get_or_create` semantics) so it is safe to re-run on partially migrated environments.
+- Production changes to reference data go through audited admin operations or use cases — never ad-hoc SQL.
+- Never use `loaddata` fixtures as the production seed mechanism; fixtures are for tests only.
+- Every seed migration lists its expected row count/content in a comment for review.
+
+---
+
 # Chapter 3 — Strict Quality Checklist
 
 Every feature, bugfix, refactor, migration, or API change must pass every applicable item below.
@@ -1835,7 +1965,40 @@ A feature is not complete merely because the tests pass.
 - [ ] Type checks pass where adopted.
 - [ ] Documentation reflects meaningful architectural decisions.
 
-## AC. Final architectural review
+## AC. API documentation and contract (§2.26)
+- [ ] The OpenAPI artifact under `docs/api/` is updated in the same PR as the endpoint change.
+- [ ] The spec is the single source of truth; runtime docs are verification, not publication.
+- [ ] All error codes documented match the exception taxonomy (§2.5).
+- [ ] Success and business-error responses are both documented per endpoint.
+- [ ] Reusable components are `$ref`'d, not duplicated.
+- [ ] Spec is linted, validated, and contract-tested in CI.
+- [ ] Breaking changes are detected in CI and accompanied by an explicit version bump.
+- [ ] `CHANGELOG.md` of the contract is updated.
+
+## AD. Business scoping and data isolation (§2.27)
+- [ ] Model carries `business_id` (+ `contexte_id` where applicable), or its exemption is documented.
+- [ ] All business queries pass through the shared scoping mechanism; no unscoped querysets in request paths.
+- [ ] Active business/context resolved server-side only; client-supplied scope ignored.
+- [ ] Cross-business object access returns 404, and a test proves it.
+- [ ] RLS policies exist for business tables and bypass tests run on PostgreSQL.
+- [ ] Superadmin cross-business reads are audited.
+- [ ] Uniqueness constraints are business-scoped, not global.
+
+## AE. Logging (§2.28)
+- [ ] Logs are structured JSON with `correlation_id` propagated.
+- [ ] No secrets, tokens, passwords, or full request bodies are logged.
+- [ ] Log levels follow the defined semantics.
+- [ ] Boundary events (request/task/external call) are logged.
+
+## AF. Dependencies and workflow (§2.29, §2.30)
+- [ ] Dependencies are pinned; vulnerability audit is green.
+- [ ] `.env.example` reflects the current configuration contract.
+- [ ] The PR is single-purpose and follows the template.
+- [ ] Migration-bearing PRs are flagged; destructive migrations are signed off.
+- [ ] Financial/stock changes received a second domain-aware reviewer.
+- [ ] Definition of done is met, including the OpenAPI artifact.
+
+## AG. Final architectural review
 
 Before considering the change production-ready, answer all of these:
 
